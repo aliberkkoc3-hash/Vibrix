@@ -1,5 +1,5 @@
 /* Vibrix — üst navigasyon ve kullanıcı menüsü */
-import { auth, $, esc, avatarHtml, toast, navigate } from './app.js';
+import { auth, site, $, esc, avatarHtml, toast, navigate } from './app.js';
 import { icon } from './icons.js';
 
 const NAV_ITEMS = [
@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { path: '/oyna', label: 'Oyna', icon: 'play' },
   { path: '/kesfet', label: 'Keşfet', icon: 'compass' },
   { path: '/liderlik', label: 'Liderlik Tablosu', icon: 'trophy' },
-  { path: '/editor', label: 'Chart Editor', icon: 'edit' },
+  { path: '/editor', label: 'Chart Editor', icon: 'edit', editorOnly: true },
   { path: '/chartlarim', label: 'Chartlarım', icon: 'library', authOnly: true },
   { path: '/profil', label: 'Profil', icon: 'user', authOnly: true },
 ];
@@ -19,7 +19,7 @@ export function renderNav() {
   const current = location.pathname.replace(/\/+$/, '') || '/';
 
   links.innerHTML = NAV_ITEMS
-    .filter((i) => !i.authOnly || user)
+    .filter((i) => (!i.authOnly || user) && (!i.editorOnly || site.editorOpen))
     .map((i) => `<a class="nav-link ${current === i.path || (i.path !== '/' && current.startsWith(i.path + '/')) ? 'active' : ''}" href="${i.path}" data-path="${i.path}" data-link>${icon(i.icon)}<span>${esc(i.label)}</span></a>`)
     .join('');
 

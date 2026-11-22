@@ -1,5 +1,5 @@
 /* Vibrix — Chart Editor: yerleştirme, hold notaları, grid, undo/redo, otomatik kayıt, test oynanışı */
-import { api, auth, $, esc, ensureEngine, toast, navigate, settings, setCleanup } from '../app.js';
+import { api, auth, site, $, esc, ensureEngine, toast, navigate, settings, setCleanup } from '../app.js';
 import { icon } from '../icons.js';
 import { GAME_EVENTS, EVENT_TYPES } from '../game/engine.js';
 
@@ -45,6 +45,8 @@ const LANE_KEYS = ['d', 'f', 'j', 'k'];
 
 export async function renderNew({ main }) {
   if (!auth.user) { sessionStorage.setItem('vibrix.redirect', '/editor'); navigate('/giris'); return; }
+  await site.loadEditorStatus();
+  if (!site.editorOpen && !site.isOwner) { renderLocked(main); return; }
   main.innerHTML = renderShell(`
     <div class="card">
       <div class="card-title">${icon('plus')} Yeni Grafik</div>
@@ -131,6 +133,38 @@ function renderShell(inner) {
 }
 
 /* ====================================================================== */
+/* Kilit ekranı                                                            */
+/* ====================================================================== */
+
+/** Editör kapalıyken gösterilecek ekran; sahibe açma düğmesi verir. */
+function renderLocked(main) {
+  main.innerHTML = `
+    <div class="page narrow">
+      <div class="card empty-state" style="text-align:center">
+        ${icon('lock')}
+        <h3>Chart Editor şimdilik kapalı</h3>
+        <p style="max-width:420px;margin:10px auto 0">Yeni şarkılar ekleneceği için şimdilik kapalı.</p>
+        ${site.isOwner ? `<div style="margin-top:20px"><button class="btn btn-primary" id="ed-unlock">${icon('unlock')} Chart Editor'ü aç</button></div>` : ''}
+        <div style="margin-top:20px"><a class="btn btn-ghost" href="/kesfet" data-link>Keşfet'e dön</a></div>
+      </div>
+    </div>`;
+  const btn = $('#ed-unlock');
+  if (btn) {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        await site.setEditorOpen(true);
+        toast('Chart Editor açıldı.', 'success');
+        navigate('/editor');
+      } catch (e) {
+        toast(e.message, 'error');
+        btn.disabled = false;
+      }
+    };
+  }
+}
+
+/* ====================================================================== */
 /* Düzenleme sayfası                                                       */
 /* ====================================================================== */
 
@@ -142,6 +176,8 @@ export async function renderEdit({ params, main }) {
     return;
   }
   if (!data.chart.isOwner) {
+    await site.loadEditorStatus();
+    if (!site.editorOpen && !site.isOwner) { renderLocked(main); return; }
     main.innerHTML = `<div class="page narrow"><div class="card empty-state">${icon('alert')}<h3>Yetkisiz işlem</h3><p>Yalnızca kendi grafiklerini düzenleyebilirsin.</p></div></div>`;
     return;
   }

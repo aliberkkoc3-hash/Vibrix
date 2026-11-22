@@ -12,6 +12,15 @@ const { rateLimit } = require('../ratelimit');
 
 const router = express.Router();
 
+/** Chart Editor kilidi — kapalıyken yeni grafik oluşturulamaz */
+function editorLocked(req, res, next) {
+  const row = db.prepare("SELECT value FROM app_meta WHERE key = 'editor_open'").get();
+  if (row && row.value === '0') {
+    return res.status(403).json({ error: 'Yeni şarkılar ekleneceği için şimdilik kapalı.' });
+  }
+  next();
+}
+
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'public', 'uploads');
 const AUDIO_DIR = path.join(UPLOAD_DIR, 'audio');
 const COVER_DIR = path.join(UPLOAD_DIR, 'cover');
@@ -124,7 +133,7 @@ function computeNoteMeta(chart) {
 }
 
 /** Yeni grafik oluştur (taslak) */
-router.post('/', requireAuth, rateLimit({ windowMs: 60 * 1000, max: 30 }), uploadFields, (req, res) => {
+router.post('/', requireAuth, editorLocked, rateLimit({ windowMs: 60 * 1000, max: 30 }), uploadFields, (req, res) => {
   const parsed = parseChartPayload(req.body || {});
   if (parsed.error) return res.status(400).json({ error: parsed.error });
   const audioFile = req.files?.audio?.[0];

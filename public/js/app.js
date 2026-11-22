@@ -304,6 +304,32 @@ export const sfx = {
   },
 };
 
+/* ---------------- Chart Editor kilidi ---------------- */
+/** Site sahibi mi? (sunucudan gelir) */
+export const site = {
+  editorOpen: true,
+  isOwner: false,
+  async loadEditorStatus() {
+    try {
+      // api() sarmalayıcısı gövdeyi döndürmez; doğrudan fetch kullan
+      const res = await fetch('/api/editor/status', { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('durum alınamadı');
+      const r = await res.json();
+      this.editorOpen = !!r.open;
+      this.isOwner = !!r.isOwner;
+    } catch {
+      this.editorOpen = true;
+      this.isOwner = false;
+    }
+    return this;
+  },
+  async setEditorOpen(open) {
+    const r = await api('/editor/status', { method: 'PUT', body: { open } });
+    this.editorOpen = !!r.open;
+    return this.editorOpen;
+  },
+};
+
 /* ---------------- Auth ---------------- */
 export const auth = {
   user: null,

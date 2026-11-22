@@ -9,6 +9,18 @@ const { publicUser } = require('./auth');
 
 const router = express.Router();
 
+/**
+ * Site sahibi — OWNER_USER env değişkeniyle belirlenir (ör. OWNER_USER=BFAli).
+ * Tanımlı değilse en düşük id'li kullanıcı sahip sayılır.
+ */
+function isOwner(user) {
+  if (!user) return false;
+  const envName = (process.env.OWNER_USER || '').trim().toLowerCase();
+  if (envName) return String(user.username || '').toLowerCase() === envName;
+  const first = db.prepare('SELECT username FROM users ORDER BY id LIMIT 1').get();
+  return !!first && first.username.toLowerCase() === String(user.username || '').toLowerCase();
+}
+
 router.get('/leaderboard', (req, res) => {
   const period = ['all', 'weekly', 'monthly'].includes(req.query.period) ? req.query.period : 'all';
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
@@ -202,3 +214,29 @@ router.get('/meta/scoring', (req, res) => {
 });
 
 module.exports = { router, readSettings };
+
+/* ------------------------------------------------------------------ */
+/* Chart Editor kilidi — sahip istediğinde kapatır/açar                 */
+/* ------------------------------------------------------------------ */
+
+const EDITOR_OPEN_KEY = 'editor_open';
+
+function isEditorOpen() {
+  const row = db.prepare('SELECT value FROM app_meta WHERE key = ?').get(EDITOR_OPEN_KEY);
+  return !row || row.value !== '0'; // varsayılan: açık
+}
+
+/** Kilit durumu (herkes görebilir) */
+router.get('/editor/status', (req, res) => {
+  res.json({ open: isEditorOpen(), isOwner: isOwner(req.user) });
+});
+
+/** Kilidi değiştir (yalnızca sahip) */
+router.put('/editor/status', requireAuth, (req, res) => {
+  if (!isOwner(req.user)) return res.status(403).json({ error: 'Bu ayarı yalnızca site sahibi değiştirebilir.' });
+  const open = !!req.body?.open;
+  db.prepare(`INSERT INTO app_meta (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(EDITOR_OPEN_KEY, open ? '1' : '0');
+  res.json({ open });
+});
+

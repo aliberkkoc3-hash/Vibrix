@@ -15,6 +15,8 @@ const ICONS = {
   star: '<polygon points="12 3 14.9 9.2 21.5 10 16.7 14.6 17.9 21.2 12 18 6.1 21.2 7.3 14.6 2.5 10 9.1 9.2 12 3"/>',
   music: '<circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><path d="M9 18V5l12-2v13"/>',
   clock: '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  unlock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>',
   chart: '<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/>',
   flame: '<path d="M12 2c1 4 4 5 4 9a4 4 0 0 1-8 0c0-1.5.6-2.4 1-3 .2 1.3 1 2 2 2 0-2-1-4 1-8z"/><path d="M8.5 13.5A5.5 5.5 0 1 0 18 17"/>',
   sparkles: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="m6.3 6.3 2.4 2.4M15.3 15.3l2.4 2.4M6.3 17.7l2.4-2.4M15.3 8.7l2.4-2.4"/>',

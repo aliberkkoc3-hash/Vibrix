@@ -1,6 +1,6 @@
 /* Vibrix — giriş noktası: rotalar, oturum ve navigasyon */
 import {
-  route, renderRoute, auth, initGlobalHandlers, api, toast, esc, fmtNum, fmtAcc, fmtDuration,
+  route, renderRoute, auth, site, initGlobalHandlers, api, toast, esc, fmtNum, fmtAcc, fmtDuration,
   avatarHtml, rankBadge, diffBadge, coverHtml, positionBadge, paginationHtml, settings, applyVisual,
 } from './app.js';
 import { icon } from './icons.js';
@@ -38,7 +38,8 @@ route('/404', NotFound.render);
 
 applyVisual();
 initGlobalHandlers();
-initNav();
+// Chart Editor kilidi durumunu sunucudan al (menü ve sayfa erişimi buna bakar)
+site.loadEditorStatus().then(() => initNav()).catch(() => initNav());
 initLegalNotice();
 
 /* ---------------- Telif ve uyumluluk uyarısı ---------------- */

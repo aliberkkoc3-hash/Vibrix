@@ -1,6 +1,6 @@
 /* Vibrix — ayarlar: ses, oynanış, görsel, genel */
 import {
-  api, auth, $, esc, settings, toast, confirmDialog, navigate, flushRemoteSave, setCleanup,
+  api, auth, site, $, esc, settings, toast, confirmDialog, navigate, flushRemoteSave, setCleanup,
 } from '../app.js';
 import { icon } from '../icons.js';
 import { NOTE_PALETTES, resolveLaneColors } from '../game/engine.js';
@@ -35,6 +35,7 @@ export async function render({ main }) {
   const s = settings.data;
   let scoring = null;
   try { scoring = await api('/meta/scoring'); } catch { /* yoksay */ }
+  await site.loadEditorStatus();
 
   main.innerHTML = `
     <div class="page narrow">
@@ -46,6 +47,17 @@ export async function render({ main }) {
         </div>
         <button class="btn btn-danger btn-sm" id="reset-all">${icon('refresh')} Ayarları Sıfırla</button>
       </div>
+
+      ${site.isOwner ? `
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-title">${icon(site.editorOpen ? 'unlock' : 'lock')} Chart Editor Kilidi</div>
+        <p class="muted small" style="margin:0 0 12px">Kapalıyken site sahibi dışında kimse yeni grafik oluşturamaz. Kapatınca ziyaretçiler "Yeni şarkılar ekleneceği için şimdilik kapalı." mesajını görür.</p>
+        <label class="check" style="margin-bottom:10px"><input type="checkbox" id="editor-lock" ${site.editorOpen ? 'checked' : ''}> Chart Editor herkese açık</label>
+        <div class="row wrap" style="gap:8px">
+          <button class="btn btn-primary btn-sm" id="editor-lock-save">${icon('save')} Kaydet</button>
+          <span class="small ${site.editorOpen ? 'muted' : ''}" id="editor-lock-state">${site.editorOpen ? 'Şu an: açık' : '<b>Şu an: kapalı</b>'}</span>
+        </div>
+      </div>` : ''}
 
       <div class="card" style="margin-bottom:18px">
         <div class="card-title">${icon('headphones')} Ses</div>
@@ -202,6 +214,24 @@ export async function render({ main }) {
     window.removeEventListener('beforeunload', ncFlush);
     window.removeEventListener('pagehide', ncFlush);
   });
+
+  /* ---------- Chart Editor kilidi (yalnızca site sahibi) ---------- */
+  const lockSave = $('#editor-lock-save');
+  if (lockSave) {
+    lockSave.addEventListener('click', async () => {
+      const open = $('#editor-lock').checked;
+      lockSave.disabled = true;
+      try {
+        await site.setEditorOpen(open);
+        $('#editor-lock-state').innerHTML = open ? 'Şu an: açık' : '<b>Şu an: kapalı</b>';
+        toast(open ? 'Chart Editor açıldı.' : 'Chart Editor kapatıldı.', 'success');
+      } catch (e) {
+        toast(e.message, 'error');
+      } finally {
+        lockSave.disabled = false;
+      }
+    });
+  }
 
   const presetSel = $('#nc-preset');
   const presetsBox = $('#nc-presets');
