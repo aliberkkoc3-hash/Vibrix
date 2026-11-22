@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const crypto = require('crypto');
 const path = require('path');
 const cookieParser = require('cookie-parser');
 const { sessionMiddleware } = require('./auth');
@@ -38,6 +39,27 @@ app.use((req, res, next) => {
   ].join('; '));
   next();
 });
+
+// Site kilidi (opsiyonel): SITE_USER + SITE_PASS env değişkenleri girilirse
+// tüm site HTTP Basic Auth ile korunur. Kimse hesap açamaz, grafik ekleyemez.
+const SITE_USER = process.env.SITE_USER || '';
+const SITE_PASS = process.env.SITE_PASS || '';
+if (SITE_USER && SITE_PASS) {
+  app.use((req, res, next) => {
+    if (req.path === '/api/health') return next();
+    const header = req.headers.authorization || '';
+    const [scheme, encoded] = header.split(' ');
+    if (scheme === 'Basic' && encoded) {
+      const [u, p] = Buffer.from(encoded, 'base64').toString().split(':');
+      const okU = u === SITE_USER;
+      const okP = p && p.length === SITE_PASS.length
+        && crypto.timingSafeEqual(Buffer.from(p), Buffer.from(SITE_PASS));
+      if (okU && okP) return next();
+    }
+    res.set('WWW-Authenticate', 'Basic realm="Vibrix", charset="UTF-8"');
+    res.status(401).send('Vibrix — erişim için giriş gerekli.');
+  });
+}
 
 app.use(sessionMiddleware);
 

@@ -5,3 +5,5 @@ data/*.db-wal
 data/screenshots/
 .env
 .DS_Store
+data/vibrix-yedek.json
+vibrix-backup-*.json
