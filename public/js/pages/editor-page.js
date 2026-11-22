@@ -143,7 +143,7 @@ function renderLocked(main) {
       <div class="card empty-state" style="text-align:center">
         ${icon('lock')}
         <h3>Chart Editor şimdilik kapalı</h3>
-        <p style="max-width:420px;margin:10px auto 0">Yeni şarkılar ekleneceği için şimdilik kapalı.</p>
+        <p style="max-width:420px;margin:10px auto 0">Chart Editor şu anda geçici olarak devre dışı. Yeni şarkılar ve içerik güncellemeleri üzerinde çalışıyoruz. Çok yakında tekrar açılacak!</p>
         <div style="margin-top:20px;max-width:320px;margin-left:auto;margin-right:auto">
           <div class="field" style="margin:0 0 10px;text-align:left"><label for="ed-unlock-pass">Site şifresi</label><input class="input" id="ed-unlock-pass" type="password" placeholder="Yalnızca site sahibi" autocomplete="current-password"></div>
           <button class="btn btn-primary" id="ed-unlock">${icon('unlock')} Chart Editor'ü aç</button>
