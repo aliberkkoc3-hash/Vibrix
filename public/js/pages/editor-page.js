@@ -1,6 +1,12 @@
 /* Vibrix — Chart Editor: yerleştirme, hold notaları, grid, undo/redo, otomatik kayıt, test oynanışı */
 import { api, auth, $, esc, ensureEngine, toast, navigate, settings, setCleanup } from '../app.js';
 import { icon } from '../icons.js';
+import { GAME_EVENTS, EVENT_TYPES } from '../game/engine.js';
+
+/** Event türü simgeleri (editor paleti) */
+const EVENT_ICON = {
+  laneflash: '⚡', zoom: '⤢', invert: '⇅', shake: '〰', glitch: '▚', wave: '◈', blackout: '◐',
+};
 import { generateChart } from '../editor/autochart.js';
 
 const DIFFICULTIES = [
@@ -144,6 +150,8 @@ class ChartEditor {
     this.main = main;
     this.chart = chart;
     this.notes = (chart.chartData?.notes || []).map((n, i) => ({ ...n, id: `n${i}` }));
+    // Oynanış eventleri (chart ile birlikte kaydedilir)
+    this.events = (chart.chartData?.events || []).map((e, i) => ({ ...e, id: e.id || `e${i}` }));
     this.bpm = chart.bpm;
     this.offset = chart.offsetMs;
     this.gridDiv = 16;
@@ -230,6 +238,7 @@ class ChartEditor {
             <div class="ed-tabs">
               <button class="ed-tab active" data-tab="song">Şarkı</button>
               <button class="ed-tab" data-tab="note">Nota</button>
+              <button class="ed-tab" data-tab="events">Eventler</button>
               <button class="ed-tab" data-tab="help">Yardım</button>
             </div>
 
@@ -251,6 +260,34 @@ class ChartEditor {
             <div class="card ed-tabpane" data-pane="note" hidden>
               <div class="card-title">${icon('layers')} Seçili Nota</div>
               <div id="ed-inspector" class="muted small">Bir nota seçin.</div>
+            </div>
+
+            <div class="card ed-tabpane" data-pane="events" hidden>
+              <div class="card-title">${icon('sparkles')} Oynanış Eventleri</div>
+              <p class="muted small" style="margin-top:-4px">Oynanışı renklendiren efektler. Seç, zamanı gelince oyunda tetiklenir.</p>
+              <div class="ev-list">
+                ${EVENT_TYPES.map((t) => `
+                  <button class="ev-item" data-ev="${t}" style="--ec:${GAME_EVENTS[t].color}">
+                    <span class="ev-ico">${EVENT_ICON[t] || '◆'}</span>
+                    <span class="ev-body"><b>${esc(GAME_EVENTS[t].name)}</b><small>${esc(GAME_EVENTS[t].desc)}</small></span>
+                  </button>`).join('')}
+              </div>
+              <div class="field" style="margin-top:12px">
+                <label>Yoğunluk</label>
+                <div class="range-row"><input type="range" id="ev-intensity" min="10" max="100" step="5" value="70"><span class="range-value" id="ev-intensity-val">70%</span></div>
+              </div>
+              <div class="field">
+                <label>Hat (sadece Hat Parıltısı)</label>
+                <select class="select" id="ev-lane">
+                  <option value="">Rastgele</option>
+                  ${LANE_META.map((m, i) => `<option value="${i}">${m.key} — ${m.label}</option>`).join('')}
+                </select>
+              </div>
+              <button class="btn btn-primary btn-block btn-sm" id="ev-add">${icon('plus')} Eventi imlece ekle</button>
+              <div class="ev-current">
+                <div class="hint" style="margin-bottom:6px">Bu grafikteki eventler (<span id="ev-count">${this.events.length}</span>)</div>
+                <div id="ev-list" class="ev-current-list"></div>
+              </div>
             </div>
 
             <div class="card ed-tabpane" data-pane="help" hidden>
@@ -678,6 +715,76 @@ class ChartEditor {
       btn.addEventListener('click', () => this.setLane(Number(btn.dataset.lane)));
     });
     // Sekmeler
+    /* ---------- Oynanış eventleri ---------- */
+    const evIntensity = () => Number($('#ev-intensity')?.value || 70);
+    const evLane = () => ($('#ev-lane')?.value === '' ? null : Number($('#ev-lane').value));
+
+    if ($('#ev-intensity')) {
+      $('#ev-intensity').addEventListener('input', () => {
+        const el = $('#ev-intensity-val');
+        if (el) el.textContent = `${evIntensity()}%`;
+      });
+    }
+
+    const renderEventList = () => {
+      const box = $('#ev-list');
+      const cnt = $('#ev-count');
+      if (cnt) cnt.textContent = String(this.events.length);
+      if (!box) return;
+      if (!this.events.length) {
+        box.innerHTML = '<span class="hint">Henüz event yok.</span>';
+        return;
+      }
+      const sorted = this.events.slice().sort((a, b) => a.time - b.time);
+      box.innerHTML = sorted.map((e) => `
+        <div class="ev-row">
+          <span class="ev-dot" style="background:${GAME_EVENTS[e.type]?.color || '#888'}"></span>
+          <span class="ev-row-name">${esc(GAME_EVENTS[e.type]?.name || e.type)}</span>
+          <span class="mono small">${this.fmtTime(e.time)}</span>
+          <button class="btn btn-ghost btn-sm ev-del" data-id="${esc(e.id)}" title="Sil">${icon('trash')}</button>
+        </div>`).join('');
+      box.querySelectorAll('.ev-del').forEach((b) => {
+        b.addEventListener('click', () => {
+          this.pushHistory();
+          this.events = this.events.filter((x) => x.id !== b.dataset.id);
+          this.markDirty();
+          renderEventList();
+          this.draw?.();
+        });
+      });
+    };
+
+    const addEvent = (type) => {
+      const time = Math.max(0, Math.round(this.nowMs ? this.nowMs() : this.scrollTime));
+      const ev = {
+        id: `e${Date.now().toString(36)}${Math.floor(Math.random() * 999)}`,
+        type,
+        time,
+        duration: type === 'blackout' ? 2000 : 1200,
+        intensity: evIntensity(),
+        lane: GAME_EVENTS[type]?.needsLane ? (evLane() ?? null) : null,
+      };
+      this.pushHistory();
+      this.events.push(ev);
+      this.markDirty();
+      renderEventList();
+      toast(`${GAME_EVENTS[type].name} eklendi · ${this.fmtTime(time)}`, 'success');
+    };
+
+    if ($('#ev-add')) {
+      let selType = 'laneflash';
+      this.main.querySelectorAll('.ev-item').forEach((b) => {
+        b.addEventListener('click', () => {
+          selType = b.dataset.ev;
+          this.main.querySelectorAll('.ev-item').forEach((x) => x.classList.toggle('active', x === b));
+        });
+      });
+      this.main.querySelector('.ev-item')?.classList.add('active');
+      $('#ev-add').addEventListener('click', () => addEvent(selType));
+    }
+    renderEventList();
+    this._renderEventList = renderEventList;
+
     this.main.querySelectorAll('.ed-tab').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.main.querySelectorAll('.ed-tab').forEach((b) => b.classList.toggle('active', b === btn));
@@ -986,7 +1093,10 @@ class ChartEditor {
   async save(silent = false) {
     const meta = this.collectMeta();
     if (!meta.songTitle) { toast('Şarkı adı boş olamaz.', 'error'); return false; }
-    const chartData = { version: 1, bpm: meta.bpm, offset: meta.offsetMs, lanes: 4, notes: this.notes };
+    const chartData = {
+      version: 1, bpm: meta.bpm, offset: meta.offsetMs, lanes: 4,
+      notes: this.notes, events: this.events,
+    };
     const fd = new FormData();
     for (const [k, v] of Object.entries(meta)) fd.append(k, String(v));
     fd.append('chartData', JSON.stringify(chartData));

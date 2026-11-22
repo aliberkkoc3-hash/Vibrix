@@ -11,6 +11,8 @@
  * Notalar zamana göre sıralı tutulur; lane/time çakışmalarına izin verilmez.
  */
 const MAX_NOTES = 8000;
+/** Bir grafikte en fazla event */
+const MAX_EVENTS = 400;
 
 const CHART_SLOTS = ['audio', 'cover'];
 
@@ -51,6 +53,26 @@ function validateChartData(data, { bpm, offset }) {
       notes.push({ id: String(n.id || `${lane}-${t}`), lane, time: t, type, duration });
     }
   }
+  // ---- Eventler (isteğe bağlı, oynanışı renklendiren efektler) ----
+  const EVENTS = ['laneflash', 'zoom', 'invert', 'shake', 'glitch', 'wave', 'blackout'];
+  const events = [];
+  if (Array.isArray(data.events)) {
+    if (data.events.length > MAX_EVENTS) errors.push(`En fazla ${MAX_EVENTS} event eklenebilir.`);
+    for (let i = 0; i < Math.min(data.events.length, MAX_EVENTS); i++) {
+      const e = data.events[i];
+      if (!e || typeof e !== 'object') continue;
+      const type = String(e.type || '');
+      if (!EVENTS.includes(type)) continue;
+      const time = Number(e.time);
+      if (!Number.isFinite(time) || time < 0 || time > 60 * 60 * 1000) continue;
+      const duration = Math.round(Math.min(20000, Math.max(120, Number(e.duration) || 1200)));
+      const intensity = Math.round(Math.min(100, Math.max(10, Number(e.intensity) || 70)));
+      const lane = Number.isInteger(Number(e.lane)) && Number(e.lane) >= 0 && Number(e.lane) <= 3 ? Number(e.lane) : null;
+      events.push({ id: String(e.id || `${type}-${Math.round(time)}`), type, time: Math.round(time), duration, intensity, lane });
+    }
+    events.sort((a, b) => a.time - b.time);
+  }
+
   if (errors.length) return { ok: false, errors: errors.slice(0, 12), chart: null };
 
   notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
@@ -60,6 +82,7 @@ function validateChartData(data, { bpm, offset }) {
     offset: Number(offset) || 0,
     lanes: 4,
     notes,
+    events,
   };
   return { ok: true, errors: [], chart: clean };
 }
@@ -99,4 +122,4 @@ function validateAttempt({ attempt, chart, noteCount, level }) {
   return { ok: true, reasons: [], counts: j, maxCombo, accuracy, score, durationMs };
 }
 
-module.exports = { validateChartData, validateAttempt, MAX_NOTES, clamp };
+module.exports = { validateChartData, validateAttempt, MAX_NOTES, MAX_EVENTS, clamp };

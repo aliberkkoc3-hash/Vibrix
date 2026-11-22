@@ -732,3 +732,27 @@ body.legal-open { overflow: hidden; }
   .legal-actions .btn { width: 100%; }
   .legal-check { justify-content: center; }
 }
+
+/* ---------- Chart editor: oynanış eventleri ---------- */
+.ev-list { display: flex; flex-direction: column; gap: 6px; }
+.ev-item {
+  display: flex; align-items: center; gap: 10px; padding: 9px 11px; width: 100%;
+  background: var(--bg-2); border: 1px solid rgba(255,255,255,.08);
+  border-left: 3px solid var(--ec, #888); border-radius: 10px;
+  cursor: pointer; text-align: left; font: inherit; color: var(--text);
+  transition: border-color .15s, background .15s, transform .12s;
+}
+.ev-item:hover { background: var(--elevated); transform: translateX(2px); }
+.ev-item.active { background: rgba(139,92,246,.16); border-color: var(--accent); border-left-color: var(--ec, #888); }
+.ev-ico { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px;
+  background: color-mix(in srgb, var(--ec, #888) 22%, transparent); color: var(--ec, #ccc); font-size: .95rem; flex: 0 0 auto; }
+.ev-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ev-body b { font-size: .83rem; font-weight: 600; }
+.ev-body small { font-size: .71rem; color: var(--text-2); line-height: 1.35; }
+
+.ev-current { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.07); }
+.ev-current-list { display: flex; flex-direction: column; gap: 4px; max-height: 190px; overflow-y: auto; }
+.ev-row { display: flex; align-items: center; gap: 8px; padding: 5px 7px; border-radius: 8px; background: rgba(255,255,255,.03); }
+.ev-row-name { flex: 1; font-size: .79rem; }
+.ev-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.ev-row .btn { padding: 2px 6px; min-width: 0; }

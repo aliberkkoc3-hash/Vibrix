@@ -13,6 +13,21 @@ const LANE_COLORS = ['#C4B5FD', '#C084FC', '#22C55E', '#F472B6'];
  * BFAli  = mavi, kırmızı, koyu kırmızı, siyah
  * Prism  = prizma: menekşe, camgöbeği, fuşya, zümrüt
  */
+/** ---------- Oynanış eventleri ----------
+ * Chart editor'da eklenir, oyun motoru zamanı gelince uygular.
+ */
+export const GAME_EVENTS = {
+  laneflash: { name: 'Hat Parıltısı', icon: 'flash', desc: 'Seçili hatta ışık dalgası geçer.', color: '#8B5CF6', needsLane: true },
+  zoom: { name: 'Kamera Yaklaş', icon: 'zoom', desc: 'Oyun alanı kısa süre yaklaşır.', color: '#22D3EE', needsLane: false },
+  invert: { name: 'Ters Çevir', icon: 'invert', desc: 'Notalar bir an ters yöne akar.', color: '#E879F9', needsLane: false },
+  shake: { name: 'Ekran Sarsıntısı', icon: 'shake', desc: 'Şiddetli sarsıntı.', color: '#F97316', needsLane: false },
+  glitch: { name: 'Glitch', icon: 'glitch', desc: 'RGB kayması ve bozulma.', color: '#EF4444', needsLane: false },
+  wave: { name: 'Dalga', icon: 'wave', desc: 'Hatlarda sıralı ışık dalgası.', color: '#34D399', needsLane: false },
+  blackout: { name: 'Karartma', icon: 'blackout', desc: 'Ekran kararır, sadece notalar kalır.', color: '#64748B', needsLane: false },
+};
+
+export const EVENT_TYPES = Object.keys(GAME_EVENTS);
+
 export const NOTE_PALETTES = {
   default: { name: 'Vibrix (Varsayılan)', colors: LANE_COLORS },
   bflec: { name: 'BFLec — Sarı & Siyah', colors: ['#FFD400', '#1A1A1A', '#FFC000', '#3A3A3A'] },
@@ -97,6 +112,16 @@ class Game {
     this.settings = settings.data;
     // Nota renkleri: hazır palet ya da kullanıcının kendi renkleri
     this.laneColors = resolveLaneColors(this.settings.visual || {});
+    // Eventler (chart'tan gelir)
+    this.events = Array.isArray(chart.chartData?.events) ? chart.chartData.events.slice().sort((a, b) => a.time - b.time) : [];
+    this.eventIndex = 0;
+    this.activeEvents = [];
+    this.zoomK = 0;        // kamera yaklaşma (0..1)
+    this.invertK = 0;      // ters akış (0..1)
+    this.glitchK = 0;      // glitch yoğunluğu
+    this.blackoutK = 0;    // karartma
+    this.laneFlash = [0, 0, 0, 0];
+    this.waveK = 0;
     this.windows = windowsFor();
 
     this.state = 'loading'; // loading | ready | countdown | playing | paused | finished
@@ -527,9 +552,70 @@ class Game {
     this.raf = requestAnimationFrame(frame);
   }
 
+  /* ---------- Eventler ---------- */
+  /** Zamanı gelen eventleri tetikle ve aktif olanların etkisini hesapla */
+  updateEvents(t, dtMs) {
+    const now = performance.now();
+    while (this.eventIndex < this.events.length && this.events[this.eventIndex].time <= t + 16) {
+      const ev = this.events[this.eventIndex++];
+      this.triggerEvent(ev);
+    }
+    // Etkileri yaşlandır
+    const decay = (v, ms) => Math.max(0, v - dtMs / ms);
+    this.zoomK = decay(this.zoomK, 420);
+    this.invertK = decay(this.invertK, 380);
+    this.glitchK = decay(this.glitchK, 360);
+    this.blackoutK = decay(this.blackoutK, 700);
+    this.waveK = decay(this.waveK, 900);
+    for (let i = 0; i < 4; i++) this.laneFlash[i] = decay(this.laneFlash[i], 420);
+    this.activeEvents = this.activeEvents.filter((e) => now - e.at < e.duration);
+  }
+
+  triggerEvent(ev) {
+    if (!ev || !GAME_EVENTS[ev.type]) return;
+    const power = Math.min(1, Math.max(0.1, (Number(ev.intensity) || 70) / 100));
+    this.activeEvents.push({ ...ev, at: performance.now(), power });
+    switch (ev.type) {
+      case 'laneflash': {
+        const lane = Number.isInteger(ev.lane) ? ev.lane : Math.floor(Math.random() * 4);
+        this.laneFlash[lane] = power;
+        this.effects.push({ lane, at: performance.now(), kind: 'press' });
+        break;
+      }
+      case 'zoom':
+        this.zoomK = power;
+        break;
+      case 'invert':
+        this.invertK = power;
+        break;
+      case 'glitch':
+        this.glitchK = power;
+        break;
+      case 'shake':
+        this.shake = Math.max(this.shake || 0, 4 + power * 10);
+        break;
+      case 'wave':
+        this.waveK = power;
+        break;
+      case 'blackout':
+        this.blackoutK = power;
+        break;
+      default: break;
+    }
+    if (this.settings.visual.hitEffects) {
+      const f = { laneflash: 880, zoom: 520, invert: 300, shake: 160, glitch: 240, wave: 700, blackout: 120 }[ev.type];
+      if (f) sfx.tone(f, 0.09, 'triangle', 0.12);
+    }
+  }
+
   update() {
     if (this.state !== 'playing') return;
     const t = this.currentTimeMs() - (this.settings.gameplay.inputOffset || 0);
+    // Event zamanlayıcı
+    const nowPerf = performance.now();
+    const dtMs = Math.min(80, this._lastUpdate ? nowPerf - this._lastUpdate : 16);
+    this._lastUpdate = nowPerf;
+    this.updateEvents(t, dtMs);
 
     // Miss tespiti
     for (const n of this.notes) {
@@ -575,7 +661,15 @@ class Game {
     const w = this.w, h = this.h;
     const dim = (this.settings.visual.backgroundDim ?? 60) / 100;
     ctx.save();
-    if (this.shake > 0.3) ctx.translate((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake);
+    // Kamera yaklaşma eventi: merkeze doğru büyüt
+    if (this.zoomK > 0.01) {
+      const z = 1 + this.zoomK * 0.085;
+      ctx.translate(w / 2, this.judgmentY);
+      ctx.scale(z, z);
+      ctx.translate(-w / 2, -this.judgmentY);
+    }
+    const shakeAmt = (this.shake || 0) + (this.glitchK > 0.2 ? this.glitchK * 5 : 0);
+    if (shakeAmt > 0.3) ctx.translate((Math.random() - 0.5) * shakeAmt, (Math.random() - 0.5) * shakeAmt);
 
     // Arka plan: notalar yukarıdan gelir, alt taraf koyulaşır
     const bg = ctx.createLinearGradient(0, 0, 0, h);
@@ -870,7 +964,8 @@ class Game {
         if (n.time + (n.duration || 0) < drawFrom) continue;
         if (n.time > drawTo) break;
         const distHead = (n.time - t) / msPerPx;
-        const yFlat = jy - distHead;   // notalar yukarıdan gelir
+        // Invert eventi: akış yönü bir an tersine döner (aşağıdan yukarı)
+        const yFlat = this.invertK > 0.05 ? jy + distHead : jy - distHead;
         if (yFlat < -60 || yFlat > this.h + 60) continue;
         const scale = P ? sc(yFlat) : 1;
         const rect = laneBox(n.lane, scale);
@@ -1036,7 +1131,129 @@ class Game {
       ctx.globalAlpha = 1;
     }
 
+    // ---- Event görsel katmanları ----
+    this.drawEventLayers(ctx, w, h, bx, bw, lw);
+
     ctx.restore();
+  }
+
+  /** Eventlerin ekran efektleri: karartma, glitch, ters akış, dalga, hat parıltısı */
+  drawEventLayers(ctx, w, h, bx, bw, lw) {
+    const jy = this.judgmentY;
+    const now = performance.now();
+
+    // Karartma: sadece notalar ve judgment bölgesi görünsün
+    if (this.blackoutK > 0.01) {
+      const a = this.blackoutK * 0.97;
+      const g = ctx.createRadialGradient(w / 2, jy, bw * 0.1, w / 2, jy, bw * 0.9);
+      g.addColorStop(0, `rgba(0,0,2,${a * 0.55})`);
+      g.addColorStop(0.55, `rgba(0,0,2,${a * 0.9})`);
+      g.addColorStop(1, `rgba(0,0,2,${a})`);
+      ctx.save();
+      ctx.fillStyle = g;
+      ctx.fillRect(-40, -40, w + 80, h + 80);
+      ctx.restore();
+    }
+
+    // Hat parıltısı: hattın tüm yüksekliğinde ışık sütunu
+    for (let i = 0; i < 4; i++) {
+      const k = this.laneFlash[i];
+      if (k <= 0.01) continue;
+      const x = bx + i * lw;
+      const col = this.laneColors[i];
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, `${col}00`);
+      g.addColorStop(0.75, `${col}${Math.round(k * 60).toString(16).padStart(2, '0')}`);
+      g.addColorStop(1, `${col}${Math.round(k * 200).toString(16).padStart(2, '0')}`);
+      ctx.save();
+      ctx.fillStyle = g;
+      ctx.fillRect(x + 2, 0, lw - 4, h);
+      ctx.restore();
+    }
+
+    // Dalga: hatlarda sıralı parlak bant
+    if (this.waveK > 0.01) {
+      const phase = (now / 240) % 4;
+      for (let i = 0; i < 4; i++) {
+        const d = Math.abs(i - phase);
+        const k = Math.max(0, 1 - d) * this.waveK;
+        if (k <= 0.02) continue;
+        const x = bx + i * lw;
+        const g = ctx.createLinearGradient(0, h, 0, jy - 420);
+        g.addColorStop(0, `rgba(52,211,153,${k * 0.85})`);
+        g.addColorStop(0.55, `rgba(52,211,153,${k * 0.35})`);
+        g.addColorStop(1, 'rgba(52,211,153,0)');
+        ctx.save();
+        ctx.fillStyle = g;
+        ctx.fillRect(x + 1, jy - 420, lw - 2, h - jy + 420);
+        // hat kenarına parlak çizgi
+        ctx.globalAlpha = k * 0.9;
+        ctx.fillStyle = '#34D399';
+        ctx.fillRect(x + 1, jy - 6, lw - 2, 3);
+        ctx.restore();
+      }
+    }
+
+    // Ters çevir: akış yönünü hissettiren üst-orta vurgu
+    if (this.invertK > 0.01) {
+      const k = this.invertK;
+      ctx.save();
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, `rgba(232,121,249,${k * 0.28})`);
+      g.addColorStop(0.55, `rgba(232,121,249,0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(bx, 0, bw, h);
+      // ok yönü göstergesi
+      ctx.globalAlpha = k * 0.9;
+      ctx.strokeStyle = '#E879F9';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      const cy = jy - 120;
+      ctx.beginPath();
+      ctx.moveTo(bx - 26, cy + 10); ctx.lineTo(bx - 26, cy - 10);
+      ctx.moveTo(bx - 32, cy - 4); ctx.lineTo(bx - 26, cy - 10); ctx.lineTo(bx - 20, cy - 4);
+      ctx.moveTo(bx + bw + 26, cy - 10); ctx.lineTo(bx + bw + 26, cy + 10);
+      ctx.moveTo(bx + bw + 20, cy + 4); ctx.lineTo(bx + bw + 26, cy + 10); ctx.lineTo(bx + bw + 32, cy + 4);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Glitch: ekranın kendisini kaydırıp renk bozulması ekler
+    if (this.glitchK > 0.01) {
+      const k = this.glitchK;
+      const bands = 4 + Math.round(k * 7);
+      ctx.save();
+      // Ekranın bir kopyasını alıp yatay dilimler halinde kaydır
+      try {
+        const snap = document.createElement('canvas');
+        snap.width = ctx.canvas.width; snap.height = ctx.canvas.height;
+        snap.getContext('2d').drawImage(ctx.canvas, 0, 0);
+        const dpr = ctx.canvas.width / w;
+        for (let i = 0; i < bands; i++) {
+          const sy = Math.random() * ctx.canvas.height;
+          const sh = (6 + Math.random() * 40 * k) * dpr;
+          const dx = (Math.random() - 0.5) * 70 * k * dpr;
+          ctx.globalAlpha = 0.85;
+          ctx.drawImage(snap, 0, sy, snap.width, sh, dx, sy / dpr, w, sh / dpr);
+        }
+      } catch { /* yoksay */ }
+      // Renk ayrışması bantları
+      ctx.globalCompositeOperation = 'screen';
+      for (let i = 0; i < bands * 2; i++) {
+        const y = Math.random() * h;
+        const bh = 2 + Math.random() * 22 * k;
+        const off = (Math.random() - 0.5) * 40 * k;
+        ctx.globalAlpha = 0.3 * k;
+        ctx.fillStyle = i % 3 === 0 ? '#EF4444' : i % 3 === 1 ? '#22D3EE' : '#A3E635';
+        ctx.fillRect(off, y, w, bh);
+      }
+      // Tarama çizgileri
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.16 * k;
+      ctx.fillStyle = '#000';
+      for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
+      ctx.restore();
+    }
   }
 
   /**
