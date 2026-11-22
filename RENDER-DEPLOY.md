@@ -97,6 +97,7 @@ klasöründe. Kalıcı olmalarını istiyorsan bir sonraki adım onları da `/va
 
 | Belirti | Sebep / Çözüm |
 |---|---|
+| `Cannot open database because the directory does not exist` | `VIBRIX_DB=/var/data/vibrix.db` yazılmış ama disk eklenmemiş. Kod artık klasörü kendisi oluşturuyor; yine de kalıcılık için disk gerekir. Disksiz kullanacaksan `VIBRIX_DB` değişkenini **tamamen sil**. |
 | Deploy "unhealthy" | `HOST=0.0.0.0` eklenmemiş |
 | Build'de `better-sqlite3` hatası | `NODE_VERSION=22.11.0` ekle (Render'ın varsayılanı çok yeni olabilir) |
 | 502 / uygulama açılmıyor | Logs sekmesinde `Vibrix çalışıyor` satırını ara |
