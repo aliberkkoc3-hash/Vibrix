@@ -15,6 +15,11 @@ const NEW_DB = path.join(DATA_DIR, 'vibrix.db');
 const OLD_DB = path.join(DATA_DIR, 'rhythmx.db');
 const DB_FILE = process.env.VIBRIX_DB || (fs.existsSync(NEW_DB) || !fs.existsSync(OLD_DB) ? NEW_DB : OLD_DB);
 
+// VIBRIX_DB bir klasör yolu gösteriyorsa (ör. /var/data/vibrix.db) o klasörü aç.
+// Render gibi ortamlarda disk bağlanmamış olsa bile uygulama açılabilsin.
+const DB_DIR = path.dirname(DB_FILE);
+if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
+
 const db = new Database(DB_FILE);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
