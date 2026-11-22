@@ -144,7 +144,10 @@ function renderLocked(main) {
         ${icon('lock')}
         <h3>Chart Editor şimdilik kapalı</h3>
         <p style="max-width:420px;margin:10px auto 0">Yeni şarkılar ekleneceği için şimdilik kapalı.</p>
-        ${site.isOwner ? `<div style="margin-top:20px"><button class="btn btn-primary" id="ed-unlock">${icon('unlock')} Chart Editor'ü aç</button></div>` : ''}
+        <div style="margin-top:20px;max-width:320px;margin-left:auto;margin-right:auto">
+          <div class="field" style="margin:0 0 10px;text-align:left"><label for="ed-unlock-pass">Site şifresi</label><input class="input" id="ed-unlock-pass" type="password" placeholder="Yalnızca site sahibi" autocomplete="current-password"></div>
+          <button class="btn btn-primary" id="ed-unlock">${icon('unlock')} Chart Editor'ü aç</button>
+        </div>
         <div style="margin-top:20px"><a class="btn btn-ghost" href="/kesfet" data-link>Keşfet'e dön</a></div>
       </div>
     </div>`;
@@ -153,7 +156,9 @@ function renderLocked(main) {
     btn.onclick = async () => {
       btn.disabled = true;
       try {
-        await site.setEditorOpen(true);
+        const pass = $('#ed-unlock-pass')?.value || site.sitePass;
+        await site.setEditorOpen(true, pass);
+        if (pass) site.setSitePass(pass);
         toast('Chart Editor açıldı.', 'success');
         navigate('/editor');
       } catch (e) {

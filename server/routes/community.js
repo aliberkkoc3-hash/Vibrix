@@ -1,6 +1,7 @@
 'use strict';
 /** Liderlik tabloları, oyuncu profilleri ve ayarlar */
 const express = require('express');
+const crypto = require('crypto');
 const { z } = require('zod');
 const { db } = require('../db');
 const { requireAuth } = require('../auth');
@@ -10,7 +11,7 @@ const { publicUser } = require('./auth');
 const router = express.Router();
 
 /**
- * Site sahibi — OWNER_USER env değişkeniyle belirlenir (ör. OWNER_USER=BFAli).
+ * Sahip yetkisi: OWNER_USER env değişkeni (ör. OWNER_USER=BFAli).
  * Tanımlı değilse en düşük id'li kullanıcı sahip sayılır.
  */
 function isOwner(user) {
@@ -20,6 +21,14 @@ function isOwner(user) {
   const first = db.prepare('SELECT username FROM users ORDER BY id LIMIT 1').get();
   return !!first && first.username.toLowerCase() === String(user.username || '').toLowerCase();
 }
+
+/** Site sahibi olmayanlar için editör kapalıysa engelle */
+function editorOpenFor(user) {
+  const row = db.prepare("SELECT value FROM app_meta WHERE key = 'editor_open'").get();
+  const open = !row || row.value !== '0';
+  return open || isOwner(user);
+}
+
 
 router.get('/leaderboard', (req, res) => {
   const period = ['all', 'weekly', 'monthly'].includes(req.query.period) ? req.query.period : 'all';
@@ -231,9 +240,17 @@ router.get('/editor/status', (req, res) => {
   res.json({ open: isEditorOpen(), isOwner: isOwner(req.user) });
 });
 
-/** Kilidi değiştir (yalnızca sahip) */
-router.put('/editor/status', requireAuth, (req, res) => {
-  if (!isOwner(req.user)) return res.status(403).json({ error: 'Bu ayarı yalnızca site sahibi değiştirebilir.' });
+/**
+ * Kilidi değiştir (yalnızca sahip).
+ * Site sahibi giriş şifresiyle de açabilir: SITE_PASS env değişkeni.
+ */
+router.put('/editor/status', (req, res) => {
+  const sitePass = process.env.SITE_PASS || '';
+  const given = String(req.body?.pass || '');
+  const passOk = !!sitePass && given.length === sitePass.length
+    && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(sitePass));
+  const ownerOk = isOwner(req.user);
+  if (!ownerOk && !passOk) return res.status(403).json({ error: 'Bu ayarı yalnızca site sahibi değiştirebilir.' });
   const open = !!req.body?.open;
   db.prepare(`INSERT INTO app_meta (key, value) VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(EDITOR_OPEN_KEY, open ? '1' : '0');

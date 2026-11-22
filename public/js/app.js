@@ -323,11 +323,14 @@ export const site = {
     }
     return this;
   },
-  async setEditorOpen(open) {
-    const r = await api('/editor/status', { method: 'PUT', body: { open } });
+  async setEditorOpen(open, pass) {
+    const r = await api('/editor/status', { method: 'PUT', body: { open, ...(pass ? { pass } : {}) } });
     this.editorOpen = !!r.open;
     return this.editorOpen;
   },
+  /** Site şifresi localStorage'da tutulur (yalnızca sahibin tarayıcısında) */
+  get sitePass() { try { return localStorage.getItem('vibrix.sitePass') || ''; } catch { return ''; } },
+  setSitePass(v) { try { if (v) localStorage.setItem('vibrix.sitePass', v); else localStorage.removeItem('vibrix.sitePass'); } catch { /* yoksay */ } },
 };
 
 /* ---------------- Auth ---------------- */

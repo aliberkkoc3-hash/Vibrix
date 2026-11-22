@@ -48,16 +48,16 @@ export async function render({ main }) {
         <button class="btn btn-danger btn-sm" id="reset-all">${icon('refresh')} Ayarları Sıfırla</button>
       </div>
 
-      ${site.isOwner ? `
       <div class="card" style="margin-bottom:18px">
         <div class="card-title">${icon(site.editorOpen ? 'unlock' : 'lock')} Chart Editor Kilidi</div>
         <p class="muted small" style="margin:0 0 12px">Kapalıyken site sahibi dışında kimse yeni grafik oluşturamaz. Kapatınca ziyaretçiler "Yeni şarkılar ekleneceği için şimdilik kapalı." mesajını görür.</p>
         <label class="check" style="margin-bottom:10px"><input type="checkbox" id="editor-lock" ${site.editorOpen ? 'checked' : ''}> Chart Editor herkese açık</label>
+        ${site.isOwner ? '' : '<div class="field" style="margin:0 0 10px"><label for="editor-lock-pass">Site şifresi</label><input class="input" id="editor-lock-pass" type="password" placeholder="SITE_PASS değişkenindeki şifre" autocomplete="current-password"><span class="hint">Yalnızca site sahibi değiştirebilir.</span></div>'}
         <div class="row wrap" style="gap:8px">
           <button class="btn btn-primary btn-sm" id="editor-lock-save">${icon('save')} Kaydet</button>
           <span class="small ${site.editorOpen ? 'muted' : ''}" id="editor-lock-state">${site.editorOpen ? 'Şu an: açık' : '<b>Şu an: kapalı</b>'}</span>
         </div>
-      </div>` : ''}
+      </div>
 
       <div class="card" style="margin-bottom:18px">
         <div class="card-title">${icon('headphones')} Ses</div>
@@ -220,9 +220,12 @@ export async function render({ main }) {
   if (lockSave) {
     lockSave.addEventListener('click', async () => {
       const open = $('#editor-lock').checked;
+      const passInput = $('#editor-lock-pass');
+      const pass = site.isOwner ? undefined : (passInput?.value || site.sitePass);
       lockSave.disabled = true;
       try {
-        await site.setEditorOpen(open);
+        await site.setEditorOpen(open, pass);
+        if (pass) site.setSitePass(pass);
         $('#editor-lock-state').innerHTML = open ? 'Şu an: açık' : '<b>Şu an: kapalı</b>';
         toast(open ? 'Chart Editor açıldı.' : 'Chart Editor kapatıldı.', 'success');
       } catch (e) {
