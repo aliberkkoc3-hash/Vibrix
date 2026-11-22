@@ -11,15 +11,25 @@ const { publicUser } = require('./auth');
 const router = express.Router();
 
 /**
- * Sahip yetkisi: OWNER_USER env değişkeni (ör. OWNER_USER=BFAli).
- * Tanımlı değilse en düşük id'li kullanıcı sahip sayılır.
+ * Sahip yetkisi:
+ *   1) OWNER_USER env değişkeni (ör. OWNER_USER=BFAli) → sabit sahip
+ *   2) OWNER_EMAILS env değişkeni (virgülle ayrılmış) → e-posta ile sahip
+ *   3) Hiçbiri yoksa: ilk kayıtlı kullanıcı (en düşük id) sahip sayılır
+ * Eski hesaplarda username_lower boş olabileceği için SQL'de LOWER() kullanılır.
  */
 function isOwner(user) {
   if (!user) return false;
+  const name = String(user.username || '').toLowerCase();
+  const mail = String(user.email || '').toLowerCase();
+
   const envName = (process.env.OWNER_USER || '').trim().toLowerCase();
-  if (envName) return String(user.username || '').toLowerCase() === envName;
+  if (envName) return name === envName;
+
+  const envMails = (process.env.OWNER_EMAILS || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+  if (envMails.length) return envMails.includes(mail);
+
   const first = db.prepare('SELECT username FROM users ORDER BY id LIMIT 1').get();
-  return !!first && first.username.toLowerCase() === String(user.username || '').toLowerCase();
+  return !!first && String(first.username || '').toLowerCase() === name;
 }
 
 /** Site sahibi olmayanlar için editör kapalıysa engelle */
@@ -237,7 +247,13 @@ function isEditorOpen() {
 
 /** Kilit durumu (herkes görebilir) */
 router.get('/editor/status', (req, res) => {
-  res.json({ open: isEditorOpen(), isOwner: isOwner(req.user) });
+  res.json({
+    open: isEditorOpen(),
+    isOwner: isOwner(req.user),
+    user: req.user ? req.user.username : null,
+    firstUser: (db.prepare('SELECT username FROM users ORDER BY id LIMIT 1').get() || {}).username || null,
+    ownerEnv: process.env.OWNER_USER || null,
+  });
 });
 
 /**
