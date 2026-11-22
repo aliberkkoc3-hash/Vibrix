@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Vibrix — Rekabetçi Ritim Oyunu</title>
+  <meta name="description" content="Vibrix, 4K ritim oyunu, topluluk grafikleri, harita liderlik tabloları ve global sıralama ile rekabetçi bir ritim platformu.">
+  <meta name="theme-color" content="#12071F">
+  <meta name="apple-mobile-web-app-title" content="Vibrix">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/brand/icon-192.png" sizes="192x192" type="image/png">
+  <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div class="bg-layer"></div>
+  <div class="bg-grid"></div>
+
+  <header class="topnav" id="topnav">
+    <a class="brand" href="/" data-link aria-label="Vibrix ana sayfa">
+      <span class="brand-mark"><img src="/brand/mark-128.png" alt="" aria-hidden="true"></span>
+      <span class="brand-word">Vibri<em>x</em></span>
+    </a>
+    <nav class="nav-links" id="nav-links" aria-label="Ana menü"></nav>
+    <div class="nav-actions" id="nav-actions"></div>
+    <button class="btn btn-ghost btn-icon nav-toggle" id="nav-toggle" aria-label="Menüyü aç/kapat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+  </header>
+
+  <main id="app-main"></main>
+
+  <div id="game-root" aria-live="polite"></div>
+
+  <!-- Telif ve uyumluluk uyarısı: ilk açılışta gösterilir, onaylanınca bir daha çıkmaz -->
+  <div class="legal-host" id="legal-host" role="dialog" aria-modal="true" aria-labelledby="legal-title" hidden>
+    <div class="legal-card" role="document">
+      <div class="legal-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3 4 6v6c0 5 3.4 8.2 8 9 4.6-.8 8-4 8-9V6l-8-3z"/><path d="M12 8v4M12 15.5h.01"/>
+        </svg>
+      </div>
+      <h2 id="legal-title">Telif ve Uyumluluk Uyarısı</h2>
+      <div class="legal-body">
+        <p>Friday Night Funkin' şarkılarının ve topluluk tarafından geliştirilen modların telif hakları ilgili eser sahiplerine ve yapımcılarına aittir.</p>
+        <p>Bu nedenle Vibrix üzerinde oluşturulan veya sunulan chartlar, orijinal oyun ya da modlardaki chartlarla birebir aynı olmayabilir. Nota zamanlamaları, vuruş yerleşimleri ve diğer ritim verilerinde farklılıklar oluşabilir.</p>
+        <p>Vibrix, ilgili eserlerin veya modların resmî bir parçası değildir ve hak sahipleriyle herhangi bir resmî bağlantısı bulunmamaktadır.</p>
+        <p class="legal-strong">Tüm haklar ilgili eser sahiplerine saklıdır.</p>
+      </div>
+      <div class="legal-actions">
+        <label class="legal-check"><input type="checkbox" id="legal-dont"> Bir daha gösterme</label>
+        <button class="btn btn-primary" id="legal-accept">Okudum, anladım</button>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <div style="padding:40px;text-align:center">Vibrix'i kullanmak için tarayıcınızda JavaScript'i etkinleştirin.</div>
+  </noscript>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
