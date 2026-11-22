@@ -66,8 +66,12 @@ async function req(path, { method = 'GET', body, cookie, form } = {}) {
   const demo = charts.data.charts.find((c) => c.isDemo) || charts.data.charts[0];
   ok('Demo grafik mevcut', !!demo);
 
-  const detail = await req(`/api/charts/${demo.id}`);
+  const detail = await req(`/api/charts/${demo.id}?play=1`);
   ok('Grafik detayı ve notalar', detail.status === 200 && Array.isArray(detail.data.chart.chartData.notes));
+
+  // Nota verisi sahip olmayanlara verilmemeli
+  const priv = await req(`/api/charts/${demo.id}`);
+  ok('Nota verisi sahibi olmayana gizli', priv.status === 200 && priv.data.chart.chartData === undefined);
 
   // Geçerli oynanış gönderimi
   const notes = detail.data.chart.chartData.notes;

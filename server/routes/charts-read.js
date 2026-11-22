@@ -101,6 +101,10 @@ router.get('/:id', (req, res) => {
   const mine = req.user ? userChartPosition(id, req.user.id) : null;
   const chart = chartRowToJson(row, { includeData: true, ownerName: row.owner_name, isFavorite });
   chart.isOwner = !!isOwner;
+  // Nota verisi yalnızca sahibine ve oynanış için (play=1) verilir.
+  // Başkasının grafiğini inceleyen kullanıcı notaları göremez/kopyalayamaz.
+  const wantsPlay = req.query.play === '1';
+  if (!isOwner && !wantsPlay) delete chart.chartData;
   res.json({
     chart,
     topEntries: lb.entries,

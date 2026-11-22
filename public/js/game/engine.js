@@ -76,7 +76,7 @@ export async function launchGame({ chartId, test = false, onExit } = {}) {
 
   let data;
   try {
-    data = await api(`/charts/${chartId}`);
+    data = await api(`/charts/${chartId}?play=1`);
   } catch (e) {
     root.classList.remove('active');
     document.body.classList.remove('in-game');
