@@ -420,6 +420,7 @@ class Game {
       if (e.key === 'Escape') {
         if (this.state === 'playing') this.togglePause();
         else if (this.state === 'paused') this.resume();
+        else if (this.state === 'countdown') { /* geri sayımı bölme */ }
         return;
       }
       if (this.state !== 'playing') return;
@@ -1296,10 +1297,39 @@ class Game {
   }
 
   resume() {
+    if (this.state !== 'paused') return;
+    // Ses askıda kalsın: geri sayım bitene kadar şarkı da durur
     this.el.overlay.classList.remove('open');
     this.el.overlay.innerHTML = '';
-    if (this.audioCtx) this.audioCtx.resume();
+    this.beginResumeCountdown();
+  }
+
+  /** Duraklatmadan dönüşte 3-2-1 geri sayımı */
+  beginResumeCountdown() {
+    this.state = 'countdown';
+    let n = 3;
+    const show = () => {
+      this.el.overlay.classList.add('open');
+      this.el.overlay.innerHTML = `<div class="countdown-wrap"><div class="countdown-num">${n}</div></div>`;
+      if (n > 1) { n--; this._cdTimer = setTimeout(show, 700); }
+      else { this._cdTimer = setTimeout(() => this.finishResume(), 700); }
+    };
+    show();
+  }
+
+  finishResume() {
+    if (this.state !== 'countdown') return;
+    this.el.overlay.classList.remove('open');
+    this.el.overlay.innerHTML = '';
     this.state = 'playing';
+    if (this.audioCtx && this.audioCtx.state === 'suspended') this.audioCtx.resume();
+    this.clearInputState();
+  }
+
+  /** Geri sayım sırasında basılı kalan tuşlar nota kaçırmasın */
+  clearInputState() {
+    this.pressed = [false, false, false, false];
+    if (this.effects) this.effects = this.effects.filter((e) => e.kind !== 'press');
   }
 
   restart() {

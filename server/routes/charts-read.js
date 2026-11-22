@@ -24,6 +24,7 @@ router.get('/', (req, res) => {
   const bpmMax = req.query.bpmMax !== undefined && req.query.bpmMax !== '' ? Number(req.query.bpmMax) : null;
   const lenMax = req.query.lenMax !== undefined && req.query.lenMax !== '' ? Number(req.query.lenMax) : null;
   const owner = req.query.owner ? Number(req.query.owner) : null;
+  const series = String(req.query.series || '').trim();
   const limit = Math.min(60, Math.max(1, Number(req.query.limit) || 24));
   const offset = Math.max(0, Number(req.query.offset) || 0);
 
@@ -38,6 +39,15 @@ router.get('/', (req, res) => {
   if (Number.isFinite(bpmMax)) { where.push('c.bpm <= ?'); params.push(bpmMax); }
   if (Number.isFinite(lenMax)) { where.push('c.length_ms <= ?'); params.push(lenMax); }
   if (owner) { where.push('c.owner_id = ?'); params.push(owner); }
+  // Seri filtresi: başlıktaki kelimeler tire/boşluk farkı gözetmeden aranır
+  // ("Vibrix Apocalypse" → "Vibrix-Apocalypse" başlıklarını da bulur)
+  if (series) {
+    // Önce grafikte kayıtlı paket adı, yoksa başlıktaki kelimeler
+    const words = series.split(/[\s\-]+/).filter(Boolean);
+    const titleMatch = words.map(() => 'c.song_title LIKE ?').join(' AND ');
+    where.push(`(c.chart_data LIKE ? OR (${titleMatch}))`);
+    params.push(`%"series":"${series.replace(/"/g, '')}"%`, ...words.map((w) => `%${w}%`));
+  }
 
   const whereSql = where.join(' AND ');
   const rows = db.prepare(`

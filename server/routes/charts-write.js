@@ -70,6 +70,7 @@ function chartRowToJson(row, { includeData = false, ownerName, isFavorite } = {}
     difficulty: row.difficulty,
     difficultyLevel: row.difficulty_level,
     description: row.description,
+    series: (() => { try { return JSON.parse(row.chart_data).series || ''; } catch { return ''; } })(),
     cover: row.cover,
     audio: row.audio_reference,
     noteCount: row.note_count,

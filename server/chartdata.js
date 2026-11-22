@@ -84,6 +84,9 @@ function validateChartData(data, { bpm, offset }) {
     notes,
     events,
   };
+  // Paket (seri) adı — Keşfet'teki seri sekmeleri bu alanı kullanır
+  const seriesRaw = typeof data.series === 'string' ? data.series.trim().slice(0, 60) : '';
+  if (seriesRaw) clean.series = seriesRaw;
   return { ok: true, errors: [], chart: clean };
 }
 

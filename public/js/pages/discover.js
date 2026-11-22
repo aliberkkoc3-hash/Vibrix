@@ -2,7 +2,14 @@
 import { api, $, esc, ensureEngine, fmtNum, fmtDuration, diffBadge, coverHtml, navigate, debounce, paginationHtml } from '../app.js';
 import { icon } from '../icons.js';
 
-const state = { q: '', sort: 'newest', difficulty: '', bpmMin: '', bpmMax: '', lenMax: '', offset: 0, limit: 18 };
+const state = { q: '', sort: 'newest', difficulty: '', bpmMin: '', bpmMax: '', lenMax: '', series: '', offset: 0, limit: 18 };
+
+/** Seri (paket) filtreleri — başlıkta geçen paket adına göre */
+const SERIES = [
+  { key: '', label: 'Hepsi' },
+  { key: 'Vibrix Apocalypse', label: 'Vibrix Apocalypse' },
+  { key: 'Vibrix', label: 'Vibrix', exclude: 'Apocalypse' },
+];
 
 export async function render({ main }) {
   const params = new URLSearchParams(location.search);
@@ -18,6 +25,9 @@ export async function render({ main }) {
           <p class="sub">Oyuncuların yayınladığı grafikleri ara, filtrele ve oyna.</p>
         </div>
         <a class="btn btn-accent" href="/editor" data-link>${icon('plus')} Yeni Grafik</a>
+      </div>
+      <div class="series-bar" id="series-bar">
+        ${SERIES.map((sr) => `<button class="series-chip${state.series === sr.key ? ' active' : ''}" data-series="${esc(sr.key)}">${esc(sr.label)}</button>`).join('')}
       </div>
       <div class="card" style="margin-bottom:22px">
         <div class="filters">
@@ -44,6 +54,15 @@ export async function render({ main }) {
       <div id="results"></div>
     </div>`;
 
+  $('#series-bar').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-series]');
+    if (!btn) return;
+    state.series = btn.dataset.series;
+    state.offset = 0;
+    for (const b of $('#series-bar').querySelectorAll('.series-chip')) b.classList.toggle('active', b.dataset.series === state.series);
+    load();
+  });
+
   $('#sort').value = state.sort;
   $('#difficulty').value = state.difficulty;
   $('#lenMax').value = state.lenMax;
@@ -53,15 +72,21 @@ export async function render({ main }) {
     host.innerHTML = '<div class="loading-screen"><div class="spinner"></div></div>';
     const qs = new URLSearchParams({ sort: state.sort, limit: String(state.limit), offset: String(state.offset) });
     for (const k of ['q', 'difficulty', 'bpmMin', 'bpmMax', 'lenMax']) if (state[k]) qs.set(k, state[k]);
+    if (state.series) qs.set('series', state.series);
     const data = await api(`/charts?${qs}`);
-    if (!data.charts.length) {
+    // "Vibrix" sekmesi Apocalypse paketini dışarıda bırakır
+    const active = SERIES.find((sr) => sr.key === state.series);
+    const charts = active?.exclude
+      ? data.charts.filter((c) => !new RegExp(active.exclude, 'i').test(c.songTitle))
+      : data.charts;
+    if (!charts.length) {
       host.innerHTML = `<div class="card empty-state">${icon('compass')}<h3>Sonuç bulunamadı</h3><p>Arama terimini veya filtreleri değiştirin.</p></div>`;
       return;
     }
     host.innerHTML = `
-      <div class="row between" style="margin-bottom:14px"><span class="muted small">${fmtNum(data.total)} grafik</span></div>
+      <div class="row between" style="margin-bottom:14px"><span class="muted small">${fmtNum(active?.exclude ? charts.length : data.total)} grafik</span></div>
       <div class="chart-grid">
-        ${data.charts.map((c) => `
+        ${charts.map((c) => `
           <article class="chart-card">
             <a href="/chart/${c.id}" data-link class="chart-cover">${coverHtml(c)}
               <div class="top-badges"><span class="badge accent">Lv.${c.difficultyLevel}</span>${c.isDemo ? '<span class="badge demo">Demo</span>' : ''}${c.isAutoChart ? '<span class="badge ai">AI</span>' : ''}</div>

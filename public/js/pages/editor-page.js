@@ -9,6 +9,9 @@ const EVENT_ICON = {
 };
 import { generateChart } from '../editor/autochart.js';
 
+/** Paket (seri) önerileri — serbest yazmaya da izin verilir */
+const SERIES_OPTIONS = ['Vibrix', 'Vibrix Apocalypse'];
+
 const DIFFICULTIES = [
   { name: 'Kolay', level: 3 }, { name: 'Normal', level: 6 }, { name: 'Zor', level: 9 },
   { name: 'Uzman', level: 12 }, { name: 'Ustaca', level: 15 },
@@ -51,6 +54,7 @@ export async function renderNew({ main }) {
           <div class="field"><label for="nf-artist">Sanatçı</label><input class="input" id="nf-artist" maxlength="120" placeholder="Örn. Vibrix Studio"></div>
           <div class="field"><label for="nf-bpm">BPM *</label><input class="input" id="nf-bpm" type="number" min="20" max="400" step="0.01" value="120" required></div>
           <div class="field"><label for="nf-offset">Ofset (ms)</label><input class="input" id="nf-offset" type="number" step="1" value="0"><span class="hint">Şarkının ilk vuruşunun başladığı an. Genelde 0-800 arası.</span></div>
+          <div class="field"><label for="nf-series">Paket</label><input class="input" id="nf-series" maxlength="60" list="nf-series-list" placeholder="Örn. Vibrix Apocalypse"><datalist id="nf-series-list">${SERIES_OPTIONS.map((x) => `<option value="${esc(x)}">`).join('')}</datalist><span class="hint">Boş bırakırsan hiçbir pakete ait olmaz.</span></div>
           <div class="field"><label for="nf-diff">Zorluk</label><select class="select" id="nf-diff">${DIFFICULTIES.map((d) => `<option value="${d.name}" data-level="${d.level}">${d.name} (Lv.${d.level})</option>`).join('')}</select></div>
           <div class="field"><label for="nf-level">Zorluk Seviyesi (1-15)</label><input class="input" id="nf-level" type="number" min="1" max="15" value="6"></div>
         </div>
@@ -96,7 +100,8 @@ export async function renderNew({ main }) {
     if (cover) fd.append('cover', cover);
     // Başlangıçta boş grafik yerine tek bir referans nota koymuyoruz; sunucu en az 1 nota istiyor.
     const bpmOffset = Number($('#nf-offset').value) || 0;
-    fd.append('chartData', JSON.stringify({ version: 1, bpm, offset: bpmOffset, lanes: 4, notes: [{ id: 'n0', lane: 0, time: Math.max(0, bpmOffset), type: 'tap', duration: 0 }] }));
+    const series = ($('#nf-series')?.value || '').trim();
+    fd.append('chartData', JSON.stringify({ version: 1, bpm, offset: bpmOffset, lanes: 4, ...(series ? { series } : {}), notes: [{ id: 'n0', lane: 0, time: Math.max(0, bpmOffset), type: 'tap', duration: 0 }] }));
 
     const btn = $('#nf-submit');
     btn.disabled = true;
@@ -246,6 +251,7 @@ class ChartEditor {
               <div class="card-title">${icon('music')} Şarkı Bilgileri</div>
               <div class="field"><label>Şarkı Adı</label><input class="input" id="ed-title" value="${esc(c.songTitle)}" maxlength="120"></div>
               <div class="field"><label>Sanatçı</label><input class="input" id="ed-artist" value="${esc(c.artist || '')}" maxlength="120"></div>
+              <div class="field"><label>Paket</label><input class="input" id="ed-series" maxlength="60" list="ed-series-list" value="${esc(c.series || '')}" placeholder="Örn. Vibrix Apocalypse"><datalist id="ed-series-list">${SERIES_OPTIONS.map((x) => `<option value="${esc(x)}">`).join('')}</datalist><span class="hint">Keşfet'teki seri sekmeleri bu alana göre çalışır.</span></div>
               <div class="grid cols-2" style="gap:10px">
                 <div class="field" style="margin:0"><label>BPM</label><input class="input" id="ed-bpm" type="number" min="20" max="400" step="0.01" value="${c.bpm}"></div>
                 <div class="field" style="margin:0"><label>Ofset (ms)</label><input class="input" id="ed-offset" type="number" step="1" value="${c.offsetMs}"></div>
@@ -812,7 +818,7 @@ class ChartEditor {
       this.destroy();
       await launch({ chartId: this.chart.id, test: true });
     });
-    for (const id of ['ed-title', 'ed-artist', 'ed-bpm', 'ed-offset', 'ed-diff', 'ed-level', 'ed-desc']) {
+    for (const id of ['ed-title', 'ed-artist', 'ed-series', 'ed-bpm', 'ed-offset', 'ed-diff', 'ed-level', 'ed-desc']) {
       $(`#${id}`).addEventListener('change', () => this.markDirty());
     }
     $('#ed-bpm').addEventListener('change', (e) => { const v = Number(e.target.value); if (v >= 20 && v <= 400) this.bpm = v; });
@@ -1087,6 +1093,7 @@ class ChartEditor {
       difficulty: $('#ed-diff').value,
       difficultyLevel: Number($('#ed-level').value) || 6,
       description: $('#ed-desc').value.trim(),
+      series: ($('#ed-series')?.value || '').trim(),
     };
   }
 
@@ -1095,6 +1102,7 @@ class ChartEditor {
     if (!meta.songTitle) { toast('Şarkı adı boş olamaz.', 'error'); return false; }
     const chartData = {
       version: 1, bpm: meta.bpm, offset: meta.offsetMs, lanes: 4,
+      ...(meta.series ? { series: meta.series } : {}),
       notes: this.notes, events: this.events,
     };
     const fd = new FormData();
