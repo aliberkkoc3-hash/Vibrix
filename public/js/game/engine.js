@@ -1,5 +1,5 @@
 /* Vibrix — oynanış motoru (Canvas 2D, AudioContext tabanlı senkronizasyon) */
-import { api, auth, settings, sfx, toast, navigate, esc, fmtNum, fmtAcc } from '../app.js';
+import { api, auth, settings, sfx, toast, navigate, esc, fmtNum, fmtAcc, fmtDuration } from '../app.js';
 import { icon } from '../icons.js';
 import {
   JUDGMENT_META, scoreFromSequence, computeAccuracy, computeRank, DEFAULT_WINDOWS,
@@ -110,9 +110,12 @@ export async function launchGame({ chartId, test = false, onExit } = {}) {
   const notes = chart.chartData.notes;
   if (auth.user) api(`/charts/${chartId}/play`, { method: 'POST' }).catch(() => {});
 
-  return new Game({
+  const game = new Game({
     root, chart, notes, test, onExit,
-  }).start();
+  });
+  // Test/geliştirme kancası: sonuç ekranını konsoldan inceleyebilmek için
+  window.__vibrixGame = game;
+  return game.start();
 }
 
 class Game {
@@ -1492,6 +1495,27 @@ class Game {
     this.submitResult();
   }
 
+  /**
+   * Sonuç ekranı animasyonları: skor sayacı + derece rozeti.
+   * Tek bir requestAnimationFrame zinciri kullanır, iş bitince kendini durdurur.
+   */
+  animateResults(target) {
+    const scoreEl = this.el.overlay.querySelector('#rc-score');
+    if (!scoreEl) return;
+    const dur = 900;
+    const t0 = performance.now();
+    const step = (now) => {
+      if (!scoreEl.isConnected) return; // ekran kapandıysa dur
+      const k = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - k, 3);
+      scoreEl.textContent = fmtNum(Math.round(target * eased));
+      if (k < 1) this._rcRaf = requestAnimationFrame(step);
+      else scoreEl.textContent = fmtNum(target);
+    };
+    cancelAnimationFrame(this._rcRaf || 0);
+    this._rcRaf = requestAnimationFrame(step);
+  }
+
   async submitResult() {
     const payload = {
       chartId: this.chart.id,
@@ -1516,65 +1540,92 @@ class Game {
     this.showResults({ result, error, payload });
   }
 
+  /** Sonuç ekranı — skor sayacı, derece rozeti, kombo/dağılım çubukları, sıralı giriş */
   showResults({ result, error, payload }) {
     const c = this.counts;
+    const total = c.perfect + c.great + c.good + c.bad + c.miss;
     const isBest = result && result.isNewBest;
     const prev = result && result.previousBest;
     const diff = prev ? payload.score - prev.score : null;
+    const rank = this.rank || 'D';
+    const pct = (v) => (total ? (v / total) * 100 : 0);
+    const stat = (label, value, sub = '') => `
+      <div class="rc-stat">
+        <span class="rc-stat-k">${label}</span>
+        <span class="rc-stat-v">${value}</span>
+        ${sub ? `<span class="rc-stat-s">${sub}</span>` : ''}
+      </div>`;
+    const judge = (key, label, value) => `
+      <div class="rc-judge rc-${key}">
+        <span class="rc-judge-k">${label}</span>
+        <span class="rc-judge-v" data-count="${value}">${value}</span>
+        <span class="rc-judge-bar"><i style="width:${pct(value).toFixed(1)}%"></i></span>
+      </div>`;
+
     this.el.overlay.classList.add('open');
     this.el.overlay.innerHTML = `
-      <div class="overlay-card results-card">
-        <div class="row between wrap" style="align-items:flex-start">
-          <div>
-            <div class="eyebrow">${this.test ? 'Test Sonucu' : 'Sonuç'}</div>
-            <h2 style="margin:4px 0 0">${esc(this.chart.songTitle)}</h2>
-            <p class="muted small">${esc(this.chart.artist || '')} · Lv.${this.chart.difficultyLevel} ${esc(this.chart.difficulty)}</p>
-          </div>
-          <div style="text-align:right">
-            ${isBest ? '<span class="new-record">' + icon('award') + ' YENİ REKOR</span>' : ''}
-            ${result && !isBest && result.position ? `<div class="badge accent">Sıralama #${result.position}</div>` : ''}
-          </div>
-        </div>
+      <div class="overlay-card results-card rc-card">
+        <div class="rc-glow" aria-hidden="true"></div>
 
-        <div class="row wrap" style="gap:26px;align-items:flex-end;margin-top:22px">
-          <div>
-            <div class="muted small" style="text-transform:uppercase;letter-spacing:.1em;font-weight:700">Skor</div>
-            <div class="results-score">${fmtNum(payload.score)}</div>
-            ${diff !== null ? `<div class="small" style="color:${diff >= 0 ? 'var(--success)' : 'var(--error)'}">${diff >= 0 ? '+' : ''}${fmtNum(diff)} (önceki ${fmtNum(prev.score)})</div>` : ''}
+        <header class="rc-head">
+          <div class="rc-head-main">
+            <span class="rc-eyebrow">${this.test ? 'Test Sonucu' : 'Oynanış Sonucu'}</span>
+            <h2 class="rc-title">${esc(this.chart.songTitle)}</h2>
+            <p class="rc-sub">${esc(this.chart.artist || 'Bilinmeyen sanatçı')}
+              <span class="rc-pill">Lv.${this.chart.difficultyLevel}</span>
+              <span class="rc-pill">${esc(this.chart.difficulty || '')}</span>
+              <span class="rc-pill rc-pill-mono">${fmtDuration(payload.durationMs)}</span>
+            </p>
           </div>
-          <div>
-            <div class="muted small" style="text-transform:uppercase;letter-spacing:.1em;font-weight:700">Derece</div>
-            <div class="results-rank rank-${esc(this.rank)}" style="color:inherit">${esc(this.rank)}</div>
+          <div class="rc-badges">
+            ${isBest ? `<span class="rc-record">${icon('award')} YENİ REKOR</span>` : ''}
+            ${result && !isBest && result.position ? `<span class="rc-pos">#${result.position}</span>` : ''}
           </div>
-          <div style="flex:1;min-width:150px">
-            <div class="muted small" style="text-transform:uppercase;letter-spacing:.1em;font-weight:700">Doğruluk</div>
-            <div class="results-score" style="font-size:1.9rem">${fmtAcc(this.accuracy)}</div>
-          </div>
-          <div>
-            <div class="muted small" style="text-transform:uppercase;letter-spacing:.1em;font-weight:700">Maks. Kombo</div>
-            <div class="mono" style="font-size:1.4rem;font-weight:800">${fmtNum(this.maxCombo)}</div>
-          </div>
-        </div>
+        </header>
 
-        <div class="judge-grid">
-          <div class="judge-cell judge-perfect"><div class="k">KUSURSUZ</div><div class="v">${c.perfect}</div></div>
-          <div class="judge-cell judge-great"><div class="k">MÜKEMMEL</div><div class="v">${c.great}</div></div>
-          <div class="judge-cell judge-good"><div class="k">İYİ</div><div class="v">${c.good}</div></div>
-          <div class="judge-cell judge-bad"><div class="k">ZAYIF</div><div class="v">${c.bad}</div></div>
-          <div class="judge-cell judge-miss"><div class="k">KAÇTI :(</div><div class="v">${c.miss}</div></div>
-        </div>
+        <section class="rc-hero">
+          <div class="rc-rank rank-${esc(rank)}">
+            <span class="rc-rank-letter">${esc(rank)}</span>
+            <span class="rc-rank-label">DERECE</span>
+          </div>
+          <div class="rc-score-wrap">
+            <span class="rc-stat-k">SKOR</span>
+            <div class="rc-score" id="rc-score" data-target="${payload.score}">0</div>
+            ${diff !== null
+              ? `<div class="rc-diff ${diff >= 0 ? 'up' : 'down'}">${diff >= 0 ? '▲' : '▼'} ${fmtNum(Math.abs(diff))} <span class="rc-diff-muted">önceki ${fmtNum(prev.score)}</span></div>`
+              : '<div class="rc-diff muted">İlk kayıt</div>'}
+          </div>
+        </section>
 
-        ${error ? `<p class="small" style="color:#fca5a5;margin-top:14px">${esc(error)}</p>` : ''}
-        ${result && result.validation.status === 'valid' ? `<p class="small" style="color:#86efac;margin-top:14px">Skor doğrulandı ve kaydedildi.${result.ratingDelta ? ` Rating +${result.ratingDelta.toFixed(2)}` : ''}</p>` : ''}
+        <section class="rc-stats">
+          ${stat('DOĞRULUK', fmtAcc(this.accuracy))}
+          ${stat('MAKS. KOMBO', fmtNum(this.maxCombo), total ? `/${total}` : '')}
+          ${stat('NOTA', fmtNum(total))}
+          ${stat('KAÇAN', fmtNum(c.miss), total ? `%${pct(c.miss).toFixed(1)}` : '')}
+        </section>
 
-        <div class="row wrap" style="gap:10px;margin-top:22px">
+        <section class="rc-judges">
+          ${judge('perfect', 'KUSURSUZ', c.perfect)}
+          ${judge('great', 'MÜKEMMEL', c.great)}
+          ${judge('good', 'İYİ', c.good)}
+          ${judge('bad', 'ZAYIF', c.bad)}
+          ${judge('miss', 'KAÇTI', c.miss)}
+        </section>
+
+        ${error ? `<p class="rc-note rc-note-error">${esc(error)}</p>` : ''}
+        ${result && result.validation && result.validation.status === 'valid'
+          ? `<p class="rc-note rc-note-ok">${icon('check')} Skor doğrulandı ve kaydedildi.${result.ratingDelta ? ` <b>Rating +${result.ratingDelta.toFixed(2)}</b>` : ''}</p>`
+          : ''}
+
+        <footer class="rc-actions">
           <button class="btn btn-primary" id="res-retry">${icon('refresh')} Tekrar Oyna</button>
           <button class="btn btn-ghost" id="res-back">${icon('library')} Şarkı Seçimi</button>
           <button class="btn btn-ghost" id="res-lb">${icon('trophy')} Liderlik Tablosu</button>
           ${auth.user ? `<button class="btn btn-ghost" id="res-profile">${icon('user')} Profil</button>` : `<a class="btn btn-ghost" href="/giris" id="res-login">${icon('login')} Oturum Aç</a>`}
           ${this.test ? `<button class="btn btn-accent" id="res-editor">${icon('edit')} Editöre Dön</button>` : ''}
-        </div>
+        </footer>
       </div>`;
+    this.animateResults(payload.score);
     this.el.overlay.querySelector('#res-retry').onclick = () => this.restart();
     this.el.overlay.querySelector('#res-back').onclick = () => this.exit('/oyna');
     this.el.overlay.querySelector('#res-lb').onclick = () => this.exit(`/chart/${this.chart.id}`);
@@ -1602,6 +1653,7 @@ class Game {
     try { if (this.audioCtx) this.audioCtx.close(); } catch { /* yoksay */ }
     this.audioCtx = null;
     clearTimeout(this._fxTimer);
+    cancelAnimationFrame(this._rcRaf || 0);
     this.root.classList.remove('active', 'fx-perfect', 'fx-great', 'fx-good', 'fx-bad');
     this.root.innerHTML = '';
     document.body.classList.remove('in-game');

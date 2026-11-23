@@ -41,6 +41,7 @@ export function renderNav() {
           <a href="/profil" data-link>${icon('user')} Profilim</a>
           <a href="/chartlarim" data-link>${icon('library')} Chartlarım</a>
           <a href="/ayarlar" data-link>${icon('settings')} Ayarlar</a>
+          <a href="/guncellemeler" data-link>${icon('sparkles')} Güncellemeler</a>
           <div class="sep"></div>
           <button id="logout-btn" type="button">${icon('logout')} Oturumu Kapat</button>
         </div>
@@ -60,6 +61,7 @@ export function renderNav() {
     });
   } else {
     actions.innerHTML = `
+      <a class="btn btn-ghost btn-sm btn-icon" href="/guncellemeler" data-link title="Güncelleme Notları" aria-label="Güncelleme Notları">${icon('sparkles')}</a>
       <a class="btn btn-ghost btn-sm" href="/giris" data-link>${icon('login')}<span>Oturum Aç</span></a>
       <a class="btn btn-primary btn-sm" href="/kayit" data-link>${icon('user')}<span>Kayıt Ol</span></a>`;
   }

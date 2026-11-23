@@ -247,7 +247,10 @@ function trackTempo(env, fps, opts = {}) {
   }
   const offset = (bestPhase / fps) * 1000;
 
-  return { bpm: Math.round(bpm * 100) / 100, offset: Math.round(offset), confidence: bestScore };
+  // bestScore ham ızgara skorudur; karşılaştırılabilir bir 0..1 güven değerine
+  // çevrilir (raporda kullanıcıya "tempo güveni" olarak gösterilir).
+  const confidence2 = Math.max(0, Math.min(1, bestScore * 1.6));
+  return { bpm: Math.round(bpm * 100) / 100, offset: Math.round(offset), confidence: confidence2 };
 }
 
 /* ------------------------------------------------------------------ */
@@ -265,7 +268,19 @@ function detectPeaks(env, bpm, { sensitivity = 1 } = {}) {
 
   const scan = (arr, band, weight) => {
     const n = arr.length;
+    if (!n) return;
     const w = Math.max(4, Math.round(beatFrames / 4));
+    // Bant geneli referans: gürültü tabanı ve tepe değeri.
+    // Sabit 0.02 eşiği sessiz/duraklamalı şarkılarda sahte vuruş, yüksek
+    // seviyeli mastering'de ise eksik vuruş üretiyordu.
+    let sum = 0;
+    let peak = 0;
+    const step = Math.max(1, Math.floor(n / 4000));
+    let cnt = 0;
+    for (let i = 0; i < n; i += step) { const v = arr[i]; sum += v; if (v > peak) peak = v; cnt++; }
+    const avg = sum / Math.max(1, cnt);
+    // Taban eşiği: ortalamanın %35'i ya da tepe değerin %6'sı (hangisi büyükse)
+    const floor = Math.max(avg * 0.35, peak * 0.06, 0.008);
     // Yerel tepe + adaptif eşik
     for (let i = 1; i < n - 1; i++) {
       const v = arr[i];
@@ -274,9 +289,10 @@ function detectPeaks(env, bpm, { sensitivity = 1 } = {}) {
       let count = 0;
       for (let j = Math.max(0, i - w); j < Math.min(n, i + w); j++) { mean += arr[j]; count++; }
       mean /= count;
-      const thresh = mean * (1.15 / sensitivity);
+      const thresh = Math.max(mean * (1.15 / sensitivity), floor);
       if (v < thresh || v < 0.02) continue;
-      results.push({ time: (i / fps) * 1000, strength: v * weight, band });
+      // Hat atamasında kullanılan güç normalize edilir (0..1)
+      results.push({ time: (i / fps) * 1000, strength: (v / (peak || 1)) * weight, band });
     }
   };
 
@@ -525,7 +541,27 @@ export async function generateChart(buffer, opts = {}) {
     if (difficulty >= 7 && Math.random() < chordChance) lanes.push(lane <= 1 ? lane + 2 : lane - 2);
 
     events.push({ time: Math.round(s.time), band: s.band, gap, beatPos, strength: s.strength, lanes, type, duration });
+
+    // --- Zorluk eskalasyonu: 9+ seviyede vuruş aralıklarına ek nota ---
+    // Yüksek seviyelerde grafik eskiden seyrek kalıyordu; burada yalnızca
+    // ızgarada boş olan 1/8'lik dilime, olasılığa bağlı olarak nota eklenir.
+    if (difficulty >= 9 && next) {
+      const eighth = beatMs / 2;
+      const slot = Math.round((s.time + eighth - offset) / eighth);
+      const slotTime = offset + slot * eighth;
+      const okGap = slotTime > s.time + 55 && slotTime < next.time - 55;
+      const fillChance = Math.min(0.55, 0.12 + (difficulty - 9) * 0.09);
+      if (okGap && slotTime > 0 && slotTime < totalMs - 80 && Math.random() < fillChance) {
+        const fillLane = (lane + (Math.random() < 0.5 ? 1 : 3)) % 4;
+        events.push({
+          time: Math.round(slotTime), band: s.band, gap: eighth, beatPos: (slotTime - offset) / beatMs,
+          strength: s.strength * 0.6, lanes: [fillLane], type: 'tap', duration: 0,
+        });
+      }
+    }
   }
+  // Zaman sırasına göre yeniden sırala (eklenen dolgu notaları)
+  events.sort((a, b) => a.time - b.time);
 
   // b) Notaları yaz
   /** @type {{id:string,lane:number,time:number,type:string,duration:number}[]} */

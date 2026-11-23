@@ -909,11 +909,29 @@ class ChartEditor {
     let host = document.getElementById('modal-host');
     if (!host) { host = document.createElement('div'); host.id = 'modal-host'; host.className = 'modal-host'; document.body.appendChild(host); }
     host.innerHTML = `
-      <div class="modal">
-        <div class="modal-head"><h3>${icon('sparkles')} AI Grafik Oluştur</h3><button class="btn btn-ghost btn-icon" data-act="close">${icon('x')}</button></div>
+      <div class="modal ai-modal">
+        <div class="modal-head ai-head">
+          <div class="ai-head-main">
+            <span class="ai-mark">${icon('sparkles')}</span>
+            <div>
+              <h3>AI Grafik Oluştur</h3>
+              <p class="ai-head-sub">Vuruş analizi · tamamen bu tarayıcıda</p>
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-icon" data-act="close">${icon('x')}</button>
+        </div>
         <div class="modal-body">
-          <p class="muted small" style="margin-bottom:14px">Şarkıdaki vuruşlar (kick, snare, hi-hat, melodi) gerçek zamanlı analiz edilir ve seçtiğin zorluğa göre 4K grafik üretilir. Analiz tamamen bu tarayıcıda çalışır, ses dosyası hiçbir yere gönderilmez. Mevcut notalar <b>değiştirilir</b> (Ctrl+Z ile geri alınabilir).</p>
-          <div class="field"><label>Zorluk seviyesi: <b id="ai-diff-label">6</b> <span class="muted" id="ai-diff-desc">Normal</span></label><input type="range" id="ai-diff" min="1" max="15" step="1" value="6"></div>
+          <p class="ai-privacy">${icon('check')}<span>Ses dosyası hiçbir yere gönderilmez. Mevcut notalar değiştirilir; <b>Ctrl+Z</b> ile geri alınabilir.</span></p>
+
+          <div class="ai-block">
+            <div class="ai-block-head">
+              <span class="ai-block-title">Zorluk</span>
+              <span class="ai-value"><b id="ai-diff-label">6</b> <span class="muted" id="ai-diff-desc">· Normal</span></span>
+            </div>
+            <input type="range" id="ai-diff" min="1" max="15" step="1" value="6">
+            <div class="ai-scale"><span>Kolay</span><span>Normal</span><span>Zor</span><span>İmkânsız</span></div>
+          </div>
+
           <div class="grid cols-2" style="gap:10px">
             <div class="field"><label>Stil</label>
               <select class="input" id="ai-style">
@@ -923,21 +941,34 @@ class ChartEditor {
                 <option value="tech">Teknik (merdiven + akor)</option>
               </select>
             </div>
-            <div class="field"><label>Vuruş hassasiyeti: <b id="ai-sens-label">100</b></label><input type="range" id="ai-sens" min="50" max="150" step="5" value="100"></div>
-          </div>
-          <div class="grid cols-2" style="gap:10px">
-            <div class="field"><label>Akor yoğunluğu: <b id="ai-chord-label">20</b>%</label><input type="range" id="ai-chords" min="0" max="100" step="5" value="20"></div>
-            <div class="field"><label>Merdiven (stairs)</label>
-              <label class="check"><input type="checkbox" id="ai-stairs" checked> Merdiven desenlerini kullan</label>
+            <div class="field">
+              <label>Vuruş hassasiyeti <b id="ai-sens-label">100</b></label>
+              <input type="range" id="ai-sens" min="50" max="150" step="5" value="100">
+              <span class="hint">Düşük = sadece belirgin vuruşlar</span>
             </div>
           </div>
+
           <div class="grid cols-2" style="gap:10px">
-            <div class="field"><label>BPM (boş bırak = otomatik)</label><input class="input" id="ai-bpm" type="number" min="20" max="400" step="0.01" placeholder="otomatik"></div>
-            <div class="field"><label>Ofset ms (boş = otomatik)</label><input class="input" id="ai-offset" type="number" step="1" placeholder="otomatik"></div>
+            <div class="field">
+              <label>Akor yoğunluğu <b id="ai-chord-label">20</b>%</label>
+              <input type="range" id="ai-chords" min="0" max="100" step="5" value="20">
+            </div>
+            <div class="field"><label>Desenler</label>
+              <label class="checkbox ai-check"><input type="checkbox" id="ai-stairs" checked> Merdiven desenlerini kullan</label>
+            </div>
           </div>
+
+          <div class="ai-block ai-block-quiet">
+            <div class="ai-block-head"><span class="ai-block-title">Tempo</span><span class="ai-hint-inline">boş bırak = otomatik algılanır</span></div>
+            <div class="grid cols-2" style="gap:10px">
+              <div class="field" style="margin:0"><input class="input" id="ai-bpm" type="number" min="20" max="400" step="0.01" placeholder="BPM (otomatik)"></div>
+              <div class="field" style="margin:0"><input class="input" id="ai-offset" type="number" step="1" placeholder="Ofset ms (otomatik)"></div>
+            </div>
+          </div>
+
           <div class="ai-progress" id="ai-progress" hidden>
             <div class="ai-bar"><span id="ai-bar-fill"></span></div>
-            <p class="muted small" id="ai-status">Hazırlanıyor…</p>
+            <div class="ai-progress-row"><p class="muted small" id="ai-status">Hazırlanıyor…</p><b class="ai-pct" id="ai-pct">0%</b></div>
           </div>
           <div id="ai-report" hidden></div>
         </div>
@@ -980,7 +1011,13 @@ class ChartEditor {
           stairs: host.querySelector('#ai-stairs').checked,
           bpm: bpmVal > 0 ? bpmVal : 0,
           offset: Number.isFinite(offVal) && host.querySelector('#ai-offset').value !== '' ? offVal : null,
-          onProgress: (p, msg) => { fill.style.width = `${Math.round(p * 100)}%`; status.textContent = msg; },
+          onProgress: (p, msg) => {
+            const pct = Math.round(p * 100);
+            fill.style.width = `${pct}%`;
+            status.textContent = msg;
+            const pctEl = host.querySelector('#ai-pct');
+            if (pctEl) pctEl.textContent = `${pct}%`;
+          },
         });
         this.pushHistory();
         this.notes = result.chartData.notes.map((n, i) => ({ ...n, id: `n${Date.now()}${i}` }));
@@ -995,9 +1032,30 @@ class ChartEditor {
         this.markDirty();
         this.renderInspector();
         this.updateStatus();
-        close();
         const st = result.stats;
-        toast(`AI grafik: ${st.noteCount} nota · ${st.bpm} BPM · ${st.holdCount} hold · ${st.chordCount} akor · ${st.stairsCount} merdiven. Ctrl+Z ile geri alabilirsin.`, 'success');
+        const report = host.querySelector('#ai-report');
+        const stat = (k, v) => `<div class="ai-stat"><span>${k}</span><b>${v}</b></div>`;
+        report.innerHTML = `
+          <div class="ai-report-card">
+            <div class="ai-report-head">${icon('check')} Grafik hazır</div>
+            <div class="ai-report-grid">
+              ${stat('Nota', st.noteCount)}
+              ${stat('BPM', st.bpm)}
+              ${stat('Ofset', st.offset + ' ms')}
+              ${stat('Hold', st.holdCount)}
+              ${stat('Akor', st.chordCount)}
+              ${stat('Merdiven', st.stairsCount)}
+            </div>
+            <p class="ai-report-foot">${confidenceNote(st)}</p>
+          </div>`;
+        report.hidden = false;
+        status.textContent = 'Tamamlandı.';
+        // Rapor görünür olsun: gövdeyi en alta kaydır
+        const body = host.querySelector('.modal-body');
+        if (body) requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+        btn.disabled = false;
+        btn.innerHTML = `${icon('sparkles')} Yeniden Oluştur`;
+        toast(`AI grafik hazır: ${st.noteCount} nota · ${st.bpm} BPM. Ctrl+Z ile geri alabilirsin.`, 'success');
       } catch (e) {
         toast('Grafik oluşturulamadı: ' + e.message, 'error');
         btn.disabled = false;
@@ -1197,4 +1255,15 @@ class ChartEditor {
   }
 
   destroy() { if (this._cleanup) this._cleanup(); }
+}
+
+/**
+ * AI raporu için tempo güveni yorumu. Düşük güvende kullanıcıya BPM'i elle
+ * girmesi önerilir; bu, üretilen grafiğin ızgarasının kaymasını engeller.
+ */
+function confidenceNote(st) {
+  const c = Number(st.tempoConfidence) || 0;
+  if (c >= 0.55) return 'Tempo güveni yüksek — ızgara sağlam oturdu.';
+  if (c >= 0.3) return 'Tempo güveni orta. Sonuç kayıyorsa BPM\'i elle girip yeniden oluştur.';
+  return 'Tempo güveni düşük (belirgin vuruş az). BPM ve ofseti elle girmen önerilir.';
 }

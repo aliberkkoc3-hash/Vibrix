@@ -507,5 +507,8 @@ export async function startGame({ chartId, test = false, onExit } = {}) {
   const launch = await ensureEngine();
   if (activeGame && activeGame.destroy) { try { activeGame.destroy(); } catch { /* yoksay */ } }
   activeGame = await launch({ chartId, test, onExit });
+  // Geliştirici/test kancası: oyun örneğine konsoldan erişim
+  window.__vibrixGame = activeGame;
+  /* hook */
   return activeGame;
 }

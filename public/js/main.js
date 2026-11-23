@@ -15,6 +15,7 @@ import * as Leaderboard from './pages/leaderboard.js';
 import * as Profile from './pages/profile.js';
 import * as MyCharts from './pages/mycharts.js';
 import * as Settings from './pages/settings.js';
+import * as Changelog from './pages/changelog.js';
 import * as EditorPage from './pages/editor-page.js';
 import * as NotFound from './pages/notfound.js';
 
@@ -30,6 +31,7 @@ route('/profil', Profile.renderMine);
 route('/oyuncu/:username', Profile.renderPublic);
 route('/chartlarim', MyCharts.render);
 route('/ayarlar', Settings.render);
+route('/guncellemeler', Changelog.render);
 route('/editor', EditorPage.renderNew);
 route('/editor/:id', EditorPage.renderEdit);
 
