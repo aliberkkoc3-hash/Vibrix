@@ -55,23 +55,34 @@ function ensureSeries(name) {
  * Grafik sayıları grafik verisindeki "series" alanından hesaplanır.
  */
 function listSeries() {
+  // 1) Tabloda kayıtlı paketler (adıyla birlikte)
   const map = new Map();
   for (const row of db.prepare('SELECT name FROM series ORDER BY id').all()) {
     const key = seriesKey(row.name);
     if (!key || map.has(key)) continue;
     map.set(key, { key, name: row.name, charts: 0, published: 0 });
   }
-  for (const row of db.prepare('SELECT chart_data, publication_status FROM charts').all()) {
-    let name = '';
-    try { name = normalizeSeries(JSON.parse(row.chart_data).series || ''); } catch { name = ''; }
+  // 2) Grafiklerdeki paket adları ve sayıları
+  const rows = db.prepare('SELECT chart_data, song_title, publication_status FROM charts').all();
+  const names = [...map.values()].map((v) => v.name);
+  for (const row of rows) {
+    // Grafikte "series" alanı boşsa başlıktan da çıkarılabilir; aksi hâlde
+    // paket adı başlıkta geçtiği hâlde sayı 0'da kalıyordu.
+    const name = seriesOfChart(row.chart_data, row.song_title, names);
     if (!name) continue;
     const key = seriesKey(name);
-    if (!map.has(key)) map.set(key, { key, name, charts: 0, published: 0 });
+    if (!map.has(key)) {
+      map.set(key, { key, name, charts: 0, published: 0 });
+      names.push(name);
+    }
     const entry = map.get(key);
     entry.charts++;
     if (row.publication_status === 'published') entry.published++;
   }
-  return [...map.values()].sort((a, b) => b.charts - a.charts || a.name.localeCompare(b.name, 'tr'));
+  // 3) Hiç grafiği olmayan paketler listelenmez (boş paket görünmesin).
+  return [...map.values()]
+    .filter((v) => v.charts > 0)
+    .sort((a, b) => b.charts - a.charts || a.name.localeCompare(b.name, 'tr'));
 }
 
 /**

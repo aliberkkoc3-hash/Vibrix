@@ -36,6 +36,21 @@ route('/editor/:id', EditorPage.renderEdit);
 /* Hata sayfası */
 route('/404', NotFound.render);
 
+/* Sayfa geçiş animasyonu: her rota değişiminde içerik yeniden belirir */
+let _lastRouteKey = '';
+window.addEventListener('vibrix:route', (e) => {
+  const main = document.getElementById('app-main');
+  if (!main) return;
+  const key = e.detail && e.detail.path;
+  if (key === _lastRouteKey) return;
+  _lastRouteKey = key;
+  main.classList.remove('is-leaving');
+  // animasyonu yeniden başlat
+  main.style.animation = 'none';
+  void main.offsetWidth;
+  main.style.animation = '';
+});
+
 applyVisual();
 initGlobalHandlers();
 // Chart Editor kilidi durumunu sunucudan al (menü ve sayfa erişimi buna bakar)

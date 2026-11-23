@@ -105,11 +105,27 @@ export async function render({ main }) {
         ${toggle('vis-combo', 'Kombo Efektleri', s.visual.comboEffects)}
         ${toggle('vis-shake', 'Ekran Sarsıntısı', s.visual.screenShake)}
         ${toggle('vis-anim', 'Arayüz Animasyonları', s.visual.animations)}
-        ${toggle('vis-fps', 'FPS Göstergesi', s.visual.showFps, 'Oynanış sırasında sol üstte gösterilir.')}
+        ${toggle('vis-fps', 'FPS Göstergesi', s.visual.showFps, 'Oynanış sırasında skor panelinde gösterilir.')}
         <div class="field"><label>UI Ölçeği</label>
           <select class="select" id="vis-scale">
             <option value="0.9">Küçük (%90)</option><option value="1">Normal (%100)</option><option value="1.1">Büyük (%110)</option><option value="1.2">Çok Büyük (%120)</option>
           </select></div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px" id="hud-card">
+        <div class="card-title">${icon('gamepad')} Oyun İçi HUD</div>
+        <p class="muted small" style="margin-top:-4px">Oynarken ekranda görünen panelleri buradan ayarla. Değişiklik bir sonraki oyunda geçerli olur.</p>
+        <div class="field"><label>HUD Düzeni</label>
+          <select class="select" id="hud-style">
+            <option value="cards">Cam Paneller (önerilen)</option>
+            <option value="compact">Sade / Minimal</option>
+          </select>
+          <span class="hint">Sade düzen, arka planı kapatır; sadece yazı ve çizgiler kalır.</span>
+        </div>
+        ${toggle('hud-combo', 'Kombo Sayacı', s.visual.hudCombo, 'Ekranın ortasında büyük kombo sayacı ve dolum çubuğu.')}
+        ${toggle('hud-jacket', 'Kapak Görseli', s.visual.hudJacket, 'Sol üstteki şarkı kartında kapak resmini gösterir.')}
+        ${toggle('hud-progress', 'İlerleme Çubuğu', s.visual.hudProgress, 'Ekranın kenarındaki şarkı ilerleme çubuğu.')}
+        ${toggle('hud-pulse', 'Kombo Işıması', s.visual.comboPulse, '25+ komboda oyun alanında oluşan hafif nabız ışıması.')}
       </div>
 
       <div class="card" style="margin-bottom:18px" id="note-colors-card">
@@ -371,6 +387,16 @@ export async function render({ main }) {
   bindToggle('vis-shake', 'screenShake');
   bindToggle('vis-anim', 'animations');
   bindToggle('vis-fps', 'showFps');
+  bindToggle('hud-combo', 'hudCombo');
+  bindToggle('hud-jacket', 'hudJacket');
+  bindToggle('hud-progress', 'hudProgress');
+  bindToggle('hud-pulse', 'comboPulse');
+
+  const hudStyle = $('#hud-style');
+  if (hudStyle) {
+    hudStyle.value = s.visual.hudStyle || 'cards';
+    hudStyle.addEventListener('change', (e) => settings.save({ visual: { hudStyle: e.target.value } }));
+  }
 
   $('#gp-windows').value = s.gameplay.judgementWindows || 'normal';
   $('#gp-windows').addEventListener('change', (e) => settings.save({ gameplay: { judgementWindows: e.target.value } }));

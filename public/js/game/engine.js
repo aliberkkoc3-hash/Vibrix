@@ -35,6 +35,19 @@ export const NOTE_PALETTES = {
   prism: { name: 'Prism Crew — Prizma', colors: ['#8B5CF6', '#22D3EE', '#E879F9', '#34D399'] },
   neon: { name: 'Neon Gece', colors: ['#22D3EE', '#A3E635', '#F472B6', '#FBBF24'] },
   mono: { name: 'Tek Renk (Beyaz)', colors: ['#F8FAFC', '#F8FAFC', '#F8FAFC', '#F8FAFC'] },
+  // --- Paket paletleri (mevcut hazır paletlere dokunulmadı) ---
+  apocalypse: {
+    name: 'Vibrix Apocalypse',
+    colors: ['#7A0F1E', '#FF2D55', '#FF7A1A', '#FFD166'],
+  },
+  scrapped: {
+    name: 'Vibrix Scrapped',
+    colors: ['#2E1065', '#6D28D9', '#A78BFA', '#D8C7FF'],
+  },
+  retakes: {
+    name: 'Vibrix Retakes',
+    colors: ['#0B3D2E', '#10B981', '#5EEAD4', '#ECFDF5'],
+  },
 };
 
 /** "#rrggbb" → doğrula */
@@ -154,6 +167,9 @@ class Game {
     this.lastJudgmentAt = 0;
     this.lastJudgmentLane = 1; // judgment yazısı notanın basıldığı hatta çıkar
     this.effects = [];
+    // Vuruş efektleri (canvas) — kısa ömürlü, sabit kapasiteli havuz
+    this.hitFx = [];
+    this.hitFxMax = 44;
     this.pressed = [false, false, false, false];
     this.nextNoteIdx = 0;
     this.score = 0;
@@ -161,21 +177,40 @@ class Game {
     this.startedAt = 0;
   }
 
+  /** Kullanıcının HUD tercihlerini kök elemana sınıf olarak uygular. */
+  applyHudPrefs() {
+    const v = settings.data.visual || {};
+    const r = this.root;
+    r.classList.toggle('hud-compact', v.hudStyle === 'compact');
+    r.classList.toggle('hud-no-combo', v.hudCombo === false);
+    r.classList.toggle('hud-no-progress', v.hudProgress === false);
+    r.classList.toggle('hud-no-jacket', v.hudJacket === false);
+    r.classList.toggle('hud-no-pulse', v.comboPulse === false);
+  }
+
   buildUi() {
     const c = this.chart;
     this.root.innerHTML = `
       <canvas id="rx-canvas"></canvas>
       <div class="game-hud">
+        <div class="hud-combo" id="hud-combo">
+          <div class="num" id="hud-combo-num">0</div>
+          <div class="lbl">KOMBO</div>
+          <div class="bar"><i id="hud-combo-bar"></i></div>
+        </div>
         <div class="hud-top">
           <div class="hud-song">
-            <div class="t">${esc(c.songTitle)}</div>
-            <div class="a">${esc(c.artist || '')} · Lv.${c.difficultyLevel} ${esc(c.difficulty)}${c.isAutoChart ? ' · <span class="ai-tag" title="Bu grafik AI ile oluşturuldu">✨ AI ile oluşturuldu</span>' : ''}</div>
-            <div class="mono" id="hud-fps" style="font-size:.7rem;color:#64748b;display:${this.settings.visual.showFps ? 'block' : 'none'}">FPS --</div>
+            <div class="hud-jacket${c.cover ? '' : ' brand-jacket'}">${c.cover ? `<img src="${esc(c.cover)}" alt="">` : '<img src="/brand/mark-128.png" alt="">'}</div>
+            <div>
+              <div class="t">${esc(c.songTitle)}</div>
+              <div class="a">${esc(c.artist || 'Bilinmeyen sanatçı')}<span class="pill">Lv.${c.difficultyLevel}</span>${c.isAutoChart ? '<span class="ai-tag" title="Bu grafik AI ile oluşturuldu">✨ AI</span>' : ''}</div>
+            </div>
           </div>
           <div class="hud-score">
             <div class="s" id="hud-score">0</div>
-            <div class="acc" id="hud-acc">100.00% · 0 kombo</div>
-            <div class="acc" id="hud-miss">Miss: 0</div>
+            <div class="acc"><b id="hud-acc">100.00%</b><span class="dot"></span><span id="hud-maxcombo">0 maks</span></div>
+            <div class="m zero" id="hud-miss">0 miss</div>
+            <div class="mono" id="hud-fps" style="display:${this.settings.visual.showFps ? 'block' : 'none'}">FPS --</div>
           </div>
         </div>
         <div class="hud-progress"><div id="hud-progress"></div></div>
@@ -197,7 +232,14 @@ class Game {
       progress: this.root.querySelector('#hud-progress'),
       fps: this.root.querySelector('#hud-fps'),
       overlay: this.root.querySelector('#overlay'),
+      combo: this.root.querySelector('#hud-combo'),
+      comboNum: this.root.querySelector('#hud-combo-num'),
+      comboBar: this.root.querySelector('#hud-combo-bar'),
+      maxCombo: this.root.querySelector('#hud-maxcombo'),
     };
+    // HUD değerleri değiştiğinde "bump" animasyonu için son değerler
+    this._hudLast = { score: -1, combo: -1, miss: -1 };
+    this.applyHudPrefs();
   }
 
   resize() {
@@ -516,6 +558,33 @@ class Game {
     }
   }
 
+  /**
+   * Vuruş efektleri. Canvas tarafı (halka + kıvılcım) her zaman çalışır;
+   * HUD tarafında yalnızca DOM düğümü bir kez oluşturulup yeniden kullanılır
+   * (animationend'de sınıf sıfırlanır) — böylece kare başına yeni düğüm yok.
+   */
+  spawnHitFx(lane, kind, now) {
+    if (kind === 'miss') return;
+    if (this.hitFx.length >= this.hitFxMax) this.hitFx.shift();
+    const hot = this.combo >= 50;
+    this.hitFx.push({ lane, kind, at: now, hot });
+    this.flashHud(kind);
+  }
+
+  flashHud(kind) {
+    const r = this.root;
+    if (!r) return;
+    const cls = `fx-${kind}`;
+    if (r.classList.contains(cls)) {
+      // aynı karede tekrar tetiklenirse animasyonu yeniden başlat
+      r.classList.remove(cls);
+      void r.offsetWidth;
+    }
+    r.classList.add(cls);
+    clearTimeout(this._fxTimer);
+    this._fxTimer = setTimeout(() => r.classList.remove('fx-perfect', 'fx-great', 'fx-good', 'fx-bad'), 260);
+  }
+
   registerJudgment(kind, lane) {
     this.judgments.push(kind);
     this.counts[kind]++;
@@ -531,9 +600,16 @@ class Game {
     this.lastJudgment = kind;
     this.lastJudgmentAt = performance.now();
     this.lastJudgmentLane = lane;
-    this.effects.push({ lane, at: performance.now(), kind });
-    if (this.settings.visual.hitEffects) sfx.judge(kind);
-    if (kind === 'miss' && this.settings.visual.screenShake) this.shake = 6;
+    const nowP = performance.now();
+    this.effects.push({ lane, at: nowP, kind });
+    if (this.settings.visual.hitEffects) {
+      this.spawnHitFx(lane, kind, nowP);
+      sfx.judge(kind);
+    }
+    if (this.settings.visual.screenShake) {
+      if (kind === 'miss') this.shake = 6;
+      else if (kind === 'perfect') this.shake = Math.max(this.shake, 2.2);
+    }
   }
 
   /* ---------- Döngü ---------- */
@@ -646,15 +722,46 @@ class Game {
     // HUD
     const totalJudged = this.counts.perfect + this.counts.great + this.counts.good + this.counts.bad + this.counts.miss;
     const acc = totalJudged ? computeAccuracy(this.counts) : 100;
-    this.el.score.textContent = fmtNum(this.score);
-    this.el.acc.textContent = `${acc.toFixed(2)}% · ${fmtNum(this.combo)} kombo`;
-    this.el.miss.textContent = `Miss: ${this.counts.miss}`;
-    this.el.progress.style.width = `${Math.min(100, Math.max(0, (t / this.chartLength) * 100))}%`;
+    this.updateHud(acc, t);
 
     if (this.shake > 0) this.shake *= 0.85;
 
     // Tüm notalar işlendi mi?
     if (totalJudged >= this.notes.length && t > this.chartLength - 200) this.finish();
+  }
+
+  /**
+   * HUD'u günceller. Değerler değiştiğinde ilgili alan kısa bir "bump"
+   * animasyonu alır; kombo 50'yi geçince kombo paneli "hot" sınıfına girer.
+   */
+  updateHud(acc, t) {
+    const e = this.el;
+    const L = this._hudLast;
+
+    if (this.score !== L.score) {
+      e.score.textContent = fmtNum(this.score);
+      e.score.classList.remove('bump');
+      void e.score.offsetWidth; // animasyonu yeniden başlat
+      e.score.classList.add('bump');
+      L.score = this.score;
+    }
+    if (this.combo !== L.combo) {
+      e.comboNum.textContent = fmtNum(this.combo);
+      e.combo.classList.remove('bump');
+      void e.combo.offsetWidth;
+      e.combo.classList.add('bump');
+      e.combo.classList.toggle('hot', this.combo >= 50);
+      e.comboBar.style.width = `${Math.min(100, (this.combo / 100) * 100)}%`;
+      L.combo = this.combo;
+    }
+    if (this.counts.miss !== L.miss) {
+      e.miss.textContent = this.counts.miss ? `${this.counts.miss} miss` : '0 miss';
+      e.miss.classList.toggle('zero', !this.counts.miss);
+      L.miss = this.counts.miss;
+    }
+    e.acc.textContent = `${acc.toFixed(2)}%`;
+    e.maxCombo.textContent = `${fmtNum(this.maxCombo)} maks`;
+    e.progress.style.width = `${Math.min(100, Math.max(0, (t / this.chartLength) * 100))}%`;
   }
 
   draw() {
@@ -1073,6 +1180,20 @@ class Game {
         ctx.moveTo(x - spread, jy);
         ctx.lineTo(x + spread, jy);
         ctx.stroke();
+        // kıvılcımlar: yalnızca perfect/great ve kombo yüksekken (ucuz, sabit sayı)
+        if (this.settings.visual.comboEffects !== false && (e.kind === 'perfect' || e.kind === 'great')) {
+          const n = e.kind === 'perfect' ? 5 : 3;
+          ctx.globalAlpha = (1 - age) * 0.75;
+          ctx.fillStyle = this.laneColors[e.lane];
+          const rad = age * 46;
+          for (let k = 0; k < n; k++) {
+            const ang = (Math.PI / (n + 1)) * (k + 1);
+            const px = x + Math.cos(ang) * rad * (k % 2 ? 1 : -1);
+            const pjy = jy - Math.sin(ang) * rad;
+            const sz = 2.2 * (1 - age) + 0.6;
+            ctx.fillRect(px - sz / 2, pjy - sz / 2, sz, sz);
+          }
+        }
       }
     }
     ctx.globalAlpha = 1;
@@ -1118,17 +1239,20 @@ class Game {
     }
     ctx.globalAlpha = 1;
 
-    // Kombo
-    if (this.combo > 2) {
-      const comboY = jy - 130;
-      ctx.globalAlpha = 0.92;
-      ctx.fillStyle = 'rgba(241,245,249,0.95)';
-      ctx.font = '800 40px Inter, Segoe UI, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(String(this.combo), w / 2, comboY);
-      ctx.font = '700 12px Inter, Segoe UI, sans-serif';
-      ctx.fillStyle = 'rgba(148,163,184,0.9)';
-      ctx.fillText('COMBO', w / 2, comboY + 16);
+    // Kombo: HUD'daki büyük sayaç artık ana gösterge. Burada yalnızca
+    // 25+ komboda oyun alanının içinde hafif bir "nabız" halkası çizilir,
+    // sahneyi kapatmamak için çok düşük opaklıkta.
+    if (this.combo >= 25 && this.settings.visual.comboEffects !== false) {
+      const pulse = 0.5 + 0.5 * Math.sin(nowPerf / 260);
+      const hot = this.combo >= 50;
+      const cw = bx + bw / 2;
+      const cy = jy - 6;
+      ctx.globalAlpha = 0.1 + 0.1 * pulse;
+      const rg = ctx.createRadialGradient(cw, cy, 0, cw, cy, bw * 0.75);
+      rg.addColorStop(0, hot ? 'rgba(244,114,182,0.55)' : 'rgba(124,92,255,0.5)');
+      rg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = rg;
+      ctx.fillRect(bx - 40, cy - 90, bw + 80, 120);
       ctx.globalAlpha = 1;
     }
 
@@ -1477,7 +1601,8 @@ class Game {
     this.destroyAudio();
     try { if (this.audioCtx) this.audioCtx.close(); } catch { /* yoksay */ }
     this.audioCtx = null;
-    this.root.classList.remove('active');
+    clearTimeout(this._fxTimer);
+    this.root.classList.remove('active', 'fx-perfect', 'fx-great', 'fx-good', 'fx-bad');
     this.root.innerHTML = '';
     document.body.classList.remove('in-game');
   }

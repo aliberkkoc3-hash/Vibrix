@@ -1,5 +1,6 @@
 /* Vibrix — keşfet: arama, filtre, sıralama */
 import { api, $, esc, ensureEngine, fmtNum, fmtDuration, diffBadge, coverHtml, navigate, debounce, paginationHtml } from '../app.js';
+import { stagger, pointerGlow } from '../shared/motion.js';
 import { icon } from '../icons.js';
 
 const state = { q: '', sort: 'newest', difficulty: '', bpmMin: '', bpmMax: '', lenMax: '', series: '', offset: 0, limit: 18 };
@@ -124,6 +125,8 @@ export async function render({ main }) {
     host.querySelectorAll('[data-page]').forEach((b) => b.addEventListener('click', () => {
       state.offset = (Number(b.dataset.page) - 1) * state.limit; load();
     }));
+    stagger(host, '.chart-card');
+    pointerGlow(host, '.chart-card');
   };
 
   $('#q').addEventListener('input', debounce((e) => { state.q = e.target.value.trim(); state.offset = 0; load(); }, 300));

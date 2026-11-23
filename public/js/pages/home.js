@@ -1,6 +1,7 @@
 /* Vibrix — ana sayfa (dashboard) */
 import { api, auth, $, esc, ensureEngine, fmtNum, fmtAcc, fmtDuration, avatarHtml, rankBadge, diffBadge, coverHtml, navigate, positionBadge } from '../app.js';
 import { icon } from '../icons.js';
+import { stagger, pointerGlow } from '../shared/motion.js';
 
 function chartCard(c) {
   return `
@@ -203,4 +204,6 @@ export async function render({ main }) {
     </div>`;
 
   bindPlayButtons(main);
+  stagger(main, '.chart-card');
+  pointerGlow(main, '.chart-card');
 }

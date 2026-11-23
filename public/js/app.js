@@ -175,6 +175,7 @@ export const DEFAULT_SETTINGS = {
   visual: {
     backgroundDim: 60, hitEffects: true, comboEffects: true, screenShake: true,
     animations: true, showFps: false, uiScale: 1, noteColors: 'default',
+    hudStyle: 'cards', hudCombo: true, hudProgress: true, hudJacket: true, comboPulse: true,
     customNoteColors: ['#C4B5FD', '#C084FC', '#22C55E', '#F472B6'], notePalettes: [],
   },
   keys: { 0: 'd', 1: 'f', 2: 'j', 3: 'k' },
@@ -446,6 +447,9 @@ export async function renderRoute() {
       updateNavActive(path);
       main.innerHTML = '<div class="loading-screen"><div class="spinner"></div><div>Yükleniyor…</div></div>';
       window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+      // Sayfa geçiş animasyonu: içerik gelince yeniden oynat
+      main.classList.remove('is-leaving');
+      window.dispatchEvent(new CustomEvent('vibrix:route', { detail: { path } }));
       try {
         await r.handler({ params, main, path });
       } catch (e) {
