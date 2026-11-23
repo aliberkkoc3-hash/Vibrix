@@ -5,7 +5,7 @@ const { db } = require('../db');
 const { requireAuth } = require('../auth');
 const { chartRowToJson } = require('./charts-write');
 const { chartLeaderboard, userChartPosition } = require('../stats');
-const { listSeries, sqlLower, MAX_SERIES_LEN } = require('../series');
+const { listSeries, seriesKey, seriesOfChart, MAX_SERIES_LEN } = require('../series');
 
 const router = express.Router();
 
@@ -40,17 +40,20 @@ router.get('/', (req, res) => {
   if (Number.isFinite(bpmMax)) { where.push('c.bpm <= ?'); params.push(bpmMax); }
   if (Number.isFinite(lenMax)) { where.push('c.length_ms <= ?'); params.push(lenMax); }
   if (owner) { where.push('c.owner_id = ?'); params.push(owner); }
-  // Seri filtresi: başlıktaki kelimeler tire/boşluk farkı gözetmeden aranır
-  // ("Vibrix Apocalypse" → "Vibrix-Apocalypse" başlıklarını da bulur)
+  // Seri (paket) filtresi: her grafik YALNIZCA tek pakette görünür.
+  // Öncelik grafikte kayıtlı paket adı ("series"); alan boşsa eski grafikler
+  // için başlıktan çıkarılır ve en uzun paket adı kazanır. Böylece
+  // "Suffering-Siblings-Vibrix-Apocalypse" yalnızca Vibrix Apocalypse'te çıkar,
+  // alt dizesi olduğu için Vibrix'te de görünmez.
   if (series) {
-    // Önce grafikte kayıtlı paket adı, yoksa başlıktaki kelimeler
-    const words = series.split(/[\s\-]+/).filter(Boolean);
-    const titleMatch = words.map(() => 'c.song_title LIKE ?').join(' AND ');
-    // Paket adı grafik verisinde birebir saklanır; büyük/küçük harf farkını
-    // gözetmemek için karşılaştırma SQLite'ın LOWER()'ı yerine JS ile yapılır
-    // (SQLite LOWER() yalnızca ASCII harfleri çevirir, Türkçe metinde yetmez).
-    where.push(`(LOWER(c.chart_data) LIKE ? OR (${titleMatch}))`);
-    params.push(`%"series":"${sqlLower(series.replace(/"/g, ''))}"%`, ...words.map((w) => `%${w}%`));
+    const target = seriesKey(series);
+    const names = listSeries().map((s) => s.name);
+    const ids = db.prepare('SELECT id, chart_data, song_title FROM charts').all()
+      .filter((c) => seriesKey(seriesOfChart(c.chart_data, c.song_title, names)) === target)
+      .map((c) => c.id);
+    if (!ids.length) where.push('0');
+    else where.push(`c.id IN (${ids.map(() => '?').join(',')})`);
+    params.push(...ids);
   }
 
   const whereSql = where.join(' AND ');

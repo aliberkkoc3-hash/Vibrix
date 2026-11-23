@@ -74,4 +74,24 @@ function listSeries() {
   return [...map.values()].sort((a, b) => b.charts - a.charts || a.name.localeCompare(b.name, 'tr'));
 }
 
-module.exports = { normalizeSeries, seriesKey, sqlLower, seriesExists, ensureSeries, listSeries, MAX_SERIES_LEN };
+/**
+ * Bir grafik hangi pakete ait? Grafik verisindeki "series" alanı esastır.
+ * Alan boşsa eski grafikler için başlıktan çıkarılır: başlıkta geçen en uzun
+ * paket adı kazanır ("...-Vibrix-Apocalypse" → Vibrix Apocalypse, Vibrix değil).
+ * Hiçbiri geçmiyorsa grafik hiçbir pakete ait değildir.
+ */
+function seriesOfChart(chartData, songTitle, seriesNames) {
+  let name = '';
+  try { name = normalizeSeries(JSON.parse(chartData).series || ''); } catch { name = ''; }
+  if (name) return name;
+  const key = seriesKey(songTitle || '').replace(/\s+/g, '');
+  if (!key) return '';
+  let best = '';
+  for (const candidate of seriesNames) {
+    const needle = seriesKey(candidate).replace(/\s+/g, '');
+    if (needle && key.includes(needle) && needle.length > seriesKey(best).replace(/\s+/g, '').length) best = candidate;
+  }
+  return best;
+}
+
+module.exports = { normalizeSeries, seriesKey, sqlLower, seriesExists, ensureSeries, listSeries, seriesOfChart, MAX_SERIES_LEN };
