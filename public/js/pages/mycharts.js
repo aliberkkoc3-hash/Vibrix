@@ -48,7 +48,7 @@ export async function render({ main }) {
                 <td>${diffBadge(c.difficulty)}</td>
                 <td class="num">${fmtNum(c.noteCount)}</td>
                 <td class="num">${fmtDuration(c.lengthMs)}</td>
-                <td class="num">${fmtNum(c.playerCount)}</td>
+                <td class="num">${fmtNum(c.playCount || 0)}</td>
                 <td>${c.status === 'published' ? '<span class="badge success">Yayında</span>' : '<span class="badge warn">Taslak</span>'}</td>
                 <td class="muted small">${timeAgo(c.updatedAt)}</td>
                 <td><div class="row" style="justify-content:flex-end;gap:6px;flex-wrap:nowrap">
