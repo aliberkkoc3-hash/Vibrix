@@ -8,6 +8,7 @@ const { z } = require('zod');
 const { db } = require('../db');
 const { requireAuth } = require('../auth');
 const { validateChartData } = require('../chartdata');
+const { ensureSeries } = require('../series');
 const { rateLimit } = require('../ratelimit');
 
 const router = express.Router();
@@ -150,7 +151,9 @@ router.post('/', requireAuth, editorLocked, rateLimit({ windowMs: 60 * 1000, max
     parsed.meta.difficulty, parsed.meta.difficultyLevel, parsed.meta.description, coverRef, audioRef,
     JSON.stringify(parsed.chart), noteCount, lengthMs);
   const row = db.prepare('SELECT * FROM charts WHERE id = ?').get(info.lastInsertRowid);
-  res.status(201).json({ chart: chartRowToJson(row, { includeData: true, ownerName: req.user.username }) });
+  // Editörde yazılan paket adı bu noktada paket olarak var olur (yoksa otomatik oluşturulur)
+  const seriesCreated = ensureSeries(parsed.chart.series);
+  res.status(201).json({ chart: chartRowToJson(row, { includeData: true, ownerName: req.user.username }), seriesCreated });
 });
 
 /** Mevcut grafiği güncelle (sahip) */
@@ -183,7 +186,9 @@ router.put('/:id', requireAuth, uploadFields, (req, res) => {
     if (old.includes('/uploads/') && fs.existsSync(old)) { try { fs.unlinkSync(old); } catch { /* yoksay */ } }
   }
   const updated = db.prepare('SELECT * FROM charts WHERE id = ?').get(id);
-  res.json({ chart: chartRowToJson(updated, { includeData: true, ownerName: req.user.username }) });
+  // Paket adı ilk kez kullanılıyorsa bu kayıtla birlikte paket oluşur
+  const seriesCreated = ensureSeries(parsed.chart.series);
+  res.json({ chart: chartRowToJson(updated, { includeData: true, ownerName: req.user.username }), seriesCreated });
 });
 
 /** Yayınla / yayından kaldır */

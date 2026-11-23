@@ -162,12 +162,33 @@ function migrate() {
     key   TEXT PRIMARY KEY,
     value TEXT
   );
+
+  -- Paketler (seriler): editörde yazılan ad ilk kayıtta buraya eklenir
+  CREATE TABLE IF NOT EXISTS series (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    name_lower TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
   `);
 
   // --- Kolon ekleyen migration'lar (eski veritabanları için) ---
   const chartCols = db.prepare('PRAGMA table_info(charts)').all().map((c) => c.name);
   if (!chartCols.includes('is_auto_chart')) {
     db.exec('ALTER TABLE charts ADD COLUMN is_auto_chart INTEGER NOT NULL DEFAULT 0');
+  }
+  // Paket (seri) listesi grafiklerden türetilir; eski veritabanlarında bir kez
+  // grafiklerdeki paket adlarından doldurulur (editörde yazılan yeni paketler
+  // kayıt sırasında otomatik eklenir).
+  const seriesSeeded = db.prepare("SELECT value FROM app_meta WHERE key = 'series_seeded'").get();
+  if (!seriesSeeded) {
+    const ins = db.prepare('INSERT OR IGNORE INTO series (name, name_lower) VALUES (?, ?)');
+    for (const row of db.prepare('SELECT chart_data FROM charts').all()) {
+      let name = '';
+      try { name = String(JSON.parse(row.chart_data).series || '').replace(/\s+/g, ' ').trim().slice(0, 60); } catch { name = ''; }
+      if (name) ins.run(name, name.toLowerCase());
+    }
+    db.prepare("INSERT INTO app_meta (key, value) VALUES ('series_seeded', '1')").run();
   }
 }
 

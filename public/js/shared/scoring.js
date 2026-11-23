@@ -41,24 +41,59 @@ export function scoreFromSequence(sequence) {
     combo++;
     if (combo > maxCombo) maxCombo = combo;
     const base = JUDGMENT_META[j].score;
-    const bonus = Math.round(clamp(combo, 1, 100) / 100 * MAX_NOTE_SCORE * COMBO_BONUS_RATIO);
+    const bonus = comboBonusFor(combo);
     score += base + bonus;
   }
   return { score: Math.round(score), maxCombo };
 }
 
 /**
- * Yalnızca judgment toplamlarından skor tahmini (oynanış sırası bilinmeden).
- * Kombo bonusunun üst sınırıyla alt sınırının ortalaması alınır; sunucu doğrulaması
- * bu değeri makul tolerans içinde karşılaştırır.
+ * Nota başına kombo bonusu (kombo 1..100 arası doğrusal, 100'den sonra sabit).
+ * scoreFromSequence ile AYNI formül — tek kaynak burasıdır.
  */
-export function scoreFromCounts(counts) {
+export function comboBonusFor(combo) {
+  return Math.round(clamp(combo, 1, 100) / 100 * MAX_NOTE_SCORE * COMBO_BONUS_RATIO);
+}
+
+/**
+ * İsabet edilen notalarda (miss'ler çıkarılmış) ulaşılabilecek kombo bonusu aralığı.
+ * Miss'ler isabetleri ayrı kombo parçalarına böler; m miss sayısıyla isabetler en
+ * fazla m+1 parçaya ayrılır. Her parça 1'den başladığı için:
+ *   - en düşük: her isabet tek başına → bonus 1
+ *   - en yüksek: parçalar eşit ve kombo 100 sınırına kadar → 1..min(100, ⌈isabet/parça⌉)
+ * (İsabet sayısı 100'ü geçtiğinde de kombo sıfırlanabilir; bonus sabit sayılamaz.)
+ */
+function comboBonusRange(hits, misses) {
+  const n = Math.max(0, Math.floor(hits));
+  if (n <= 0) return { min: 0, max: 0 };
+  const parts = Math.max(1, Math.min(n, Math.floor(misses) + 1));
+  const longest = Math.min(100, Math.ceil(n / parts));
+  return { min: comboBonusFor(1), max: comboBonusFor(longest) };
+}
+
+/**
+ * Yalnızca judgment toplamlarından skor aralığı (oynanış sırası bilinmeden).
+ * Skor = taban puan + kombo bonusu olduğundan, toplamlar verildiğinde skorun
+ * alabileceği en düşük ve en yüksek değer kesin olarak hesaplanabilir (bkz. comboBonusRange).
+ * Sunucu doğrulaması istemci skorunu bu aralıkla karşılaştırır.
+ */
+export function scoreRangeFromCounts(counts) {
   const order = ['perfect', 'great', 'good', 'bad'];
   let base = 0;
-  let n = 0;
-  for (const j of order) { base += counts[j] * JUDGMENT_META[j].score; n += counts[j]; }
-  const avgBonus = Math.round(clamp((n + 1) / 2, 1, 100) / 100 * MAX_NOTE_SCORE * COMBO_BONUS_RATIO);
-  return Math.round(base + n * avgBonus);
+  let hits = 0;
+  for (const j of order) { base += counts[j] * JUDGMENT_META[j].score; hits += counts[j]; }
+  const misses = counts.miss || 0;
+  const { min, max } = comboBonusRange(hits, misses);
+  return { min: Math.round(base + hits * min), max: Math.round(base + hits * max), base, hits };
+}
+
+/**
+ * Yalnızca judgment toplamlarından skor tahmini (oynanış sırası bilinmeden).
+ * scoreRangeFromCounts aralığının ortası döner.
+ */
+export function scoreFromCounts(counts) {
+  const r = scoreRangeFromCounts(counts);
+  return Math.round((r.min + r.max) / 2);
 }
 
 /** Doğruluk yüzdesi (0-100) — judgment ağırlıklarına göre */

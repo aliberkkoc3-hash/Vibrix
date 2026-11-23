@@ -4,17 +4,32 @@ import { icon } from '../icons.js';
 
 const state = { q: '', sort: 'newest', difficulty: '', bpmMin: '', bpmMax: '', lenMax: '', series: '', offset: 0, limit: 18 };
 
-/** Seri (paket) filtreleri — başlıkta geçen paket adına göre */
-const SERIES = [
-  { key: '', label: 'Hepsi' },
-  { key: 'Vibrix Apocalypse', label: 'Vibrix Apocalypse' },
-  { key: 'Vibrix', label: 'Vibrix', exclude: 'Apocalypse' },
-];
+/**
+ * Paket (seri) filtreleri — sabit liste yok, sunucudan gelir.
+ * Editörde yeni bir paket adı yazılıp grafik kaydedildiğinde paket otomatik oluşur
+ * ve burada kendiliğinden görünür.
+ */
+let SERIES = [{ key: '', label: 'Hepsi' }];
+
+/** Sunucudan paket listesini çek (başarısız olursa yalnızca "Hepsi" kalır) */
+async function loadSeries() {
+  try {
+    const data = await api('/charts/meta/series');
+    const list = (data.series || []).map((s) => ({ key: s.name, label: s.name }));
+    SERIES = [{ key: '', label: 'Hepsi' }, ...list];
+  } catch {
+    SERIES = [{ key: '', label: 'Hepsi' }];
+  }
+  return SERIES;
+}
 
 export async function render({ main }) {
   const params = new URLSearchParams(location.search);
   if (params.get('sort')) state.sort = params.get('sort');
   if (params.get('q')) state.q = params.get('q');
+  await loadSeries();
+  // URL'deki paket hâlâ geçerliyse korunur
+  if (params.get('series') && SERIES.some((sr) => sr.key === params.get('series'))) state.series = params.get('series');
 
   main.innerHTML = `
     <div class="page">
@@ -74,17 +89,13 @@ export async function render({ main }) {
     for (const k of ['q', 'difficulty', 'bpmMin', 'bpmMax', 'lenMax']) if (state[k]) qs.set(k, state[k]);
     if (state.series) qs.set('series', state.series);
     const data = await api(`/charts?${qs}`);
-    // "Vibrix" sekmesi Apocalypse paketini dışarıda bırakır
-    const active = SERIES.find((sr) => sr.key === state.series);
-    const charts = active?.exclude
-      ? data.charts.filter((c) => !new RegExp(active.exclude, 'i').test(c.songTitle))
-      : data.charts;
+    const charts = data.charts;
     if (!charts.length) {
       host.innerHTML = `<div class="card empty-state">${icon('compass')}<h3>Sonuç bulunamadı</h3><p>Arama terimini veya filtreleri değiştirin.</p></div>`;
       return;
     }
     host.innerHTML = `
-      <div class="row between" style="margin-bottom:14px"><span class="muted small">${fmtNum(active?.exclude ? charts.length : data.total)} grafik</span></div>
+      <div class="row between" style="margin-bottom:14px"><span class="muted small">${fmtNum(data.total)} grafik</span></div>
       <div class="chart-grid">
         ${charts.map((c) => `
           <article class="chart-card">

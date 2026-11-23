@@ -36,12 +36,17 @@ async function validateSubmission({ body, chart, chartData, userId }) {
   const reportedRank = String(body.rank || expectedRank);
   if (reportedRank !== expectedRank) { reasons.push(`Derece uyuşmuyor (beklenen ${expectedRank}).`); suspicious = true; }
 
-  // Skor: maksimumu aşamaz ve yalnızca kombo bonusundaki sıra belirsizliği kadar fark olabilir
+  // Skor: maksimumu aşamaz ve yalnızca kombo bonusundaki sıra belirsizliği kadar fark olabilir.
+  // Yalnızca judgment toplamları bilindiği için skor, kombo sırasına göre bir aralıkta
+  // değişebilir (bkz. scoreRangeFromCounts). Bu aralık kesin sınırdır; ayrıca sayısal
+  // yuvarlama payı bırakılır. (Sabit tolerans, kısa grafiklerde geçerli skorları reddediyordu.)
   const maxPossible = S.maxScoreForNotes(noteCount);
+  const scoreRange = S.scoreRangeFromCounts(v.counts);
+  const slack = Math.max(60, Math.round(maxPossible * 0.01));
   if (v.score > maxPossible) { reasons.push('Skor teorik maksimumu aşıyor.'); suspicious = true; }
-  const scoreFromCounts = S.scoreFromCounts(v.counts);
-  const tolerance = Math.max(60, Math.round(maxPossible * 0.02));
-  if (Math.abs(v.score - scoreFromCounts) > tolerance) { reasons.push('Skor yeniden hesaplanan aralığın dışında.'); suspicious = true; }
+  if (v.score < scoreRange.min - slack || v.score > scoreRange.max + slack) {
+    reasons.push('Skor yeniden hesaplanan aralığın dışında.'); suspicious = true;
+  }
 
   // 3) Süre kontrolü
   const expectedLength = Math.max(chart.length_ms, 1000);
@@ -56,7 +61,14 @@ async function validateSubmission({ body, chart, chartData, userId }) {
   // Grafik notalarıyla tutarlılık: hold notaları ayrı bir kategori değil, nota sayısına dahildir.
   // Sunucu yalnızca toplam nota sayısını doğrular (validateAttempt içinde).
 
-  return { ok: reasons.length === 0, reasons, suspicious, computed: { accuracy: acc, rank: expectedRank, scoreFromCounts } };
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    suspicious,
+    computed: {
+      accuracy: acc, rank: expectedRank, scoreRange, scoreFromCounts: S.scoreFromCounts(v.counts),
+    },
+  };
 }
 
 router.post('/', requireAuth, rateLimit({ windowMs: 60 * 1000, max: 20, message: 'Çok hızlı skor gönderiyorsunuz. Lütfen biraz bekleyin.' }), async (req, res) => {

@@ -9,8 +9,23 @@ const EVENT_ICON = {
 };
 import { generateChart } from '../editor/autochart.js';
 
-/** Paket (seri) önerileri — serbest yazmaya da izin verilir */
-const SERIES_OPTIONS = ['Vibrix', 'Vibrix Apocalypse'];
+/**
+ * Paket (seri) önerileri — sabit liste yok, mevcut paketler sunucudan gelir.
+ * Listede olmayan bir ad yazmak serbesttir: ilk kaydedildiğinde o paket
+ * otomatik olarak oluşur.
+ */
+let SERIES_OPTIONS = [];
+
+/** Mevcut paket adlarını getir (başarısız olursa öneri listesi boş kalır) */
+async function loadSeriesOptions() {
+  try {
+    const data = await api('/charts/meta/series');
+    SERIES_OPTIONS = (data.series || []).map((s) => s.name);
+  } catch {
+    SERIES_OPTIONS = [];
+  }
+  return SERIES_OPTIONS;
+}
 
 const DIFFICULTIES = [
   { name: 'Kolay', level: 3 }, { name: 'Normal', level: 6 }, { name: 'Zor', level: 9 },
@@ -47,6 +62,7 @@ export async function renderNew({ main }) {
   if (!auth.user) { sessionStorage.setItem('vibrix.redirect', '/editor'); navigate('/giris'); return; }
   await site.loadEditorStatus();
   if (!site.editorOpen && !site.isOwner) { renderLocked(main); return; }
+  await loadSeriesOptions();
   main.innerHTML = renderShell(`
     <div class="card">
       <div class="card-title">${icon('plus')} Yeni Grafik</div>
@@ -56,7 +72,7 @@ export async function renderNew({ main }) {
           <div class="field"><label for="nf-artist">Sanatçı</label><input class="input" id="nf-artist" maxlength="120" placeholder="Örn. Vibrix Studio"></div>
           <div class="field"><label for="nf-bpm">BPM *</label><input class="input" id="nf-bpm" type="number" min="20" max="400" step="0.01" value="120" required></div>
           <div class="field"><label for="nf-offset">Ofset (ms)</label><input class="input" id="nf-offset" type="number" step="1" value="0"><span class="hint">Şarkının ilk vuruşunun başladığı an. Genelde 0-800 arası.</span></div>
-          <div class="field"><label for="nf-series">Paket</label><input class="input" id="nf-series" maxlength="60" list="nf-series-list" placeholder="Örn. Vibrix Apocalypse"><datalist id="nf-series-list">${SERIES_OPTIONS.map((x) => `<option value="${esc(x)}">`).join('')}</datalist><span class="hint">Boş bırakırsan hiçbir pakete ait olmaz.</span></div>
+          <div class="field"><label for="nf-series">Paket</label><input class="input" id="nf-series" maxlength="60" list="nf-series-list" placeholder="Örn. Vibrix Apocalypse"><datalist id="nf-series-list">${SERIES_OPTIONS.map((x) => `<option value="${esc(x)}">`).join('')}</datalist><span class="hint">Boş bırakırsan hiçbir pakete ait olmaz. Yazdığın paket yoksa otomatik oluşturulur.</span></div>
           <div class="field"><label for="nf-diff">Zorluk</label><select class="select" id="nf-diff">${DIFFICULTIES.map((d) => `<option value="${d.name}" data-level="${d.level}">${d.name} (Lv.${d.level})</option>`).join('')}</select></div>
           <div class="field"><label for="nf-level">Zorluk Seviyesi (1-15)</label><input class="input" id="nf-level" type="number" min="1" max="15" value="6"></div>
         </div>
@@ -110,6 +126,7 @@ export async function renderNew({ main }) {
     btn.innerHTML = '<span class="spinner"></span> Yükleniyor…';
     try {
       const r = await api('/charts', { method: 'POST', form: fd });
+      if (r.seriesCreated) toast(`"${r.chart.series}" paketi oluşturuldu.`, 'success');
       toast('Grafik oluşturuldu. Notaları yerleştirmeye başlayabilirsin.', 'success');
       navigate(`/editor/${r.chart.id}`);
     } catch (ex) {
@@ -186,6 +203,7 @@ export async function renderEdit({ params, main }) {
     main.innerHTML = `<div class="page narrow"><div class="card empty-state">${icon('alert')}<h3>Yetkisiz işlem</h3><p>Yalnızca kendi grafiklerini düzenleyebilirsin.</p></div></div>`;
     return;
   }
+  await loadSeriesOptions();
   const editor = new ChartEditor({ main, chart: data.chart });
   editor.mount();
   setCleanup(() => editor.destroy());
@@ -292,7 +310,7 @@ class ChartEditor {
               <div class="card-title">${icon('music')} Şarkı Bilgileri</div>
               <div class="field"><label>Şarkı Adı</label><input class="input" id="ed-title" value="${esc(c.songTitle)}" maxlength="120"></div>
               <div class="field"><label>Sanatçı</label><input class="input" id="ed-artist" value="${esc(c.artist || '')}" maxlength="120"></div>
-              <div class="field"><label>Paket</label><input class="input" id="ed-series" maxlength="60" list="ed-series-list" value="${esc(c.series || '')}" placeholder="Örn. Vibrix Apocalypse"><datalist id="ed-series-list">${SERIES_OPTIONS.map((x) => `<option value="${esc(x)}">`).join('')}</datalist><span class="hint">Keşfet'teki seri sekmeleri bu alana göre çalışır.</span></div>
+              <div class="field"><label>Paket</label><input class="input" id="ed-series" maxlength="60" list="ed-series-list" value="${esc(c.series || '')}" placeholder="Örn. Vibrix Apocalypse"><datalist id="ed-series-list">${SERIES_OPTIONS.map((x) => `<option value="${esc(x)}">`).join('')}</datalist><span class="hint">Boş bırakırsan hiçbir pakete ait olmaz. Yazdığın paket yoksa otomatik oluşturulur.</span></div>
               <div class="grid cols-2" style="gap:10px">
                 <div class="field" style="margin:0"><label>BPM</label><input class="input" id="ed-bpm" type="number" min="20" max="400" step="0.01" value="${c.bpm}"></div>
                 <div class="field" style="margin:0"><label>Ofset (ms)</label><input class="input" id="ed-offset" type="number" step="1" value="${c.offsetMs}"></div>
@@ -1154,6 +1172,7 @@ class ChartEditor {
       const r = await api(`/charts/${this.chart.id}`, { method: 'PUT', form: fd });
       this.chart = { ...this.chart, ...r.chart };
       this.dirty = false;
+      if (r.seriesCreated) toast(`"${r.chart.series}" paketi oluşturuldu.`, 'success');
       const s = $('#ed-save-state');
       if (s) s.textContent = 'Kaydedildi';
       const dot = $('#ed-dot');

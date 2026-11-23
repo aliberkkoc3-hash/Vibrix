@@ -5,6 +5,7 @@ const { db } = require('../db');
 const { requireAuth } = require('../auth');
 const { chartRowToJson } = require('./charts-write');
 const { chartLeaderboard, userChartPosition } = require('../stats');
+const { listSeries, sqlLower, MAX_SERIES_LEN } = require('../series');
 
 const router = express.Router();
 
@@ -45,8 +46,11 @@ router.get('/', (req, res) => {
     // Önce grafikte kayıtlı paket adı, yoksa başlıktaki kelimeler
     const words = series.split(/[\s\-]+/).filter(Boolean);
     const titleMatch = words.map(() => 'c.song_title LIKE ?').join(' AND ');
-    where.push(`(c.chart_data LIKE ? OR (${titleMatch}))`);
-    params.push(`%"series":"${series.replace(/"/g, '')}"%`, ...words.map((w) => `%${w}%`));
+    // Paket adı grafik verisinde birebir saklanır; büyük/küçük harf farkını
+    // gözetmemek için karşılaştırma SQLite'ın LOWER()'ı yerine JS ile yapılır
+    // (SQLite LOWER() yalnızca ASCII harfleri çevirir, Türkçe metinde yetmez).
+    where.push(`(LOWER(c.chart_data) LIKE ? OR (${titleMatch}))`);
+    params.push(`%"series":"${sqlLower(series.replace(/"/g, ''))}"%`, ...words.map((w) => `%${w}%`));
   }
 
   const whereSql = where.join(' AND ');
@@ -127,6 +131,15 @@ router.get('/:id/leaderboard', (req, res) => {
   const lb = chartLeaderboard(id, { limit, offset, search });
   const mine = req.user ? userChartPosition(id, req.user.id) : null;
   res.json({ ...lb, myBest: mine });
+});
+
+/**
+ * Paket (seri) listesi — Keşfet'teki paket sekmeleri buradan gelir.
+ * Paketler grafiklerin içindeki "series" alanından türetilir; editörde yazılan
+ * yeni bir paket adı ilk grafik kaydedildiğinde listeye girer.
+ */
+router.get('/meta/series', (req, res) => {
+  res.json({ series: listSeries(), maxLength: MAX_SERIES_LEN });
 });
 
 /** Oynanışa başlarken oynama sayacı */
