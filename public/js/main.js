@@ -5,6 +5,7 @@ import {
 } from './app.js';
 import { icon } from './icons.js';
 import { initNav } from './nav.js';
+import { initBoot, bootStep, bootDone } from './shared/boot.js';
 
 import * as Home from './pages/home.js';
 import * as Auth from './pages/auth.js';
@@ -18,6 +19,11 @@ import * as Settings from './pages/settings.js';
 import * as Changelog from './pages/changelog.js';
 import * as EditorPage from './pages/editor-page.js';
 import * as NotFound from './pages/notfound.js';
+
+/* Açılış ekranı: modüller yüklendi, adımlar buradan işler */
+initBoot();
+window.__vibrixBootReady = true;   // HTML'deki yer tutucu animasyonu durdurur
+bootStep('modules');
 
 /* Rotalar */
 route('/', Home.render);
@@ -97,13 +103,48 @@ function initLegalNotice() {
 window.__vibrixInit = { initLegalNotice, LEGAL_KEY };
 
 (async () => {
-  await auth.refresh();
+  // 1) Sunucu erişilebilir mi? (gerçek istek)
+  try {
+    await api('/health');
+    bootStep('server');
+  } catch {
+    bootStep('server', 'Sunucuya ulaşılamadı, yine de devam ediliyor…');
+  }
+
+  // 2) Oturum doğrulama (gerçek istek: /auth/me)
+  try { await auth.refresh(); } catch { /* yoksay */ }
+  bootStep('session');
+
   // Giriş sonrası geri yönlendirme
   if (auth.user && (location.pathname === '/giris' || location.pathname === '/kayit')) {
     const redirect = sessionStorage.getItem('vibrix.redirect');
     if (redirect) { sessionStorage.removeItem('vibrix.redirect'); history.replaceState({}, '', redirect); }
   }
+
+  // 3) Kullanıcı ayarları (tema/HUD vb.) — auth.refresh() içinde sunucudan geldi
+  if (settings && settings.data) applyVisual(settings.data);
+  bootStep('settings');
+
+  // 4) İlk sayfanın verisi: gerçek API çağrısı
+  try {
+    const path = location.pathname;
+    const jobs = [];
+    if (path === '/' || path === '/oyna' || path === '/kesfet') {
+      jobs.push(api('/charts?limit=12&sort=trending'));
+    }
+    if (path === '/liderlik') {
+      jobs.push(api('/leaderboard?limit=10'));
+    }
+    if (jobs.length) await Promise.allSettled(jobs);
+  } catch { /* yoksay */ }
+  bootStep('data');
+
+  // 5) Arayüzü çiz
   await renderRoute();
+  bootStep('ui');
+
+  // Bitti: açılış ekranı kapanır
+  bootDone();
 })();
 
 export { api, toast, esc, fmtNum, fmtAcc, fmtDuration, avatarHtml, rankBadge, diffBadge, coverHtml, positionBadge, paginationHtml, settings, icon };

@@ -141,7 +141,7 @@ export async function render({ main }) {
           <circle cx="240" cy="160" r="40" stroke="#A78BFA" stroke-opacity=".4" stroke-width="1.5"/>
           <path d="M120 260 L200 60 L260 200 L340 100" stroke="#A78BFA" stroke-opacity=".5" stroke-width="2"/>
         </svg>
-        <div class="eyebrow">Rekabetçi ritim platformu</div>
+        <div class="eyebrow">Ritmin Ötesinde Rekabet.</div>
         <h1>${greeting}</h1>
         <p class="lead">${esc(sub)}</p>
         <div class="actions">

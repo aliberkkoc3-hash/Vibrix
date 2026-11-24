@@ -8,6 +8,30 @@ import { icon } from '../icons.js';
  */
 const RELEASES = [
   {
+    version: '1.6',
+    date: '24 Kasım 2026',
+    title: '4 Yeni Şarkı',
+    tag: 'İçerik',
+    highlights: [
+      '4 yeni grafik eklendi: QT-Termination, Silly-Billy Hit Single, Crossed-Out ve Blue-Zenith (Lv.13–15).',
+      'Oyun içi HUD yenilendi ve büyütüldü: skor bloğu sağ üstte, kombo sol altta.',
+      'Oyuna can barı eklendi: can bitince Game Over ekranı açılıyor (Tekrar Dene ile yeniden başlanır).',
+      'Sahne çerçevesi: oyun sırasında sağ/sol panellerde şarkı künyesi, ilerleme ve judgment dağılımı.',
+    ],
+  },
+  {
+    version: '1.5',
+    date: '24 Kasım 2026',
+    title: 'Yeni Yazı Tipi ve Açılış Ekranı',
+    tag: 'Arayüz',
+    highlights: [
+      'Tüm yazılar VCR OSD Mono yazı tipine geçti (harf aralığı ve satır yüksekliği fonta göre ayarlandı).',
+      'Açılış ekranı eklendi: sunucu, oturum ve grafikler gerçekten yüklenirken adım adım ilerliyor.',
+      'Sol altta "Açık Kaynak" butonu: GitHub deposuna gider.',
+      'Profil menüsündeki simgeler küçültüldü, Güncellemeler bağlantısı menüye taşındı.',
+    ],
+  },
+  {
     version: '1.4',
     date: '23 Kasım 2026',
     title: 'Yeni Arayüz & Oyun İçi HUD',
@@ -18,6 +42,8 @@ const RELEASES = [
       'Oyun içi HUD tamamen yenilendi: şarkı kartı, üst-orta kombo sayacı, skor paneli.',
       'Vuruşlara halka, kıvılcım ve ekran ışıması efektleri eklendi.',
       'Sonuç ekranı yeniden tasarlandı: derece rozeti, skor animasyonu, judgment dağılımı.',
+      'Güncelleme Notları sayfası eklendi (bu sayfa).',
+      'AI grafik üretici iyileştirildi: gürültü tabanlı vuruş algılama ve yüksek zorluklarda daha yoğun grafik.',
     ],
   },
   {

@@ -8,6 +8,14 @@ import {
 const LANE_COLORS = ['#C4B5FD', '#C084FC', '#22C55E', '#F472B6'];
 
 /**
+ * Can (health) sistemi — Game Over eşiği.
+ * Perfect +1.6, Great +1.1, Good +0.4, Bad -2.6, Miss -7.2
+ * Can 0'a inince oynanış durur ve "Game Over" ekranı açılır.
+ * 8+ hatada (miss/bad) sonuç skoru gönderilmez: oynanış geçersiz sayılır.
+ */
+const HEALTH = { start: 100, max: 100, fail: 0, failLives: 8 };
+
+/**
  * Hazır nota renk paletleri.
  * BFLec  = sarı / siyah
  * BFAli  = mavi, kırmızı, koyu kırmızı, siyah
@@ -113,6 +121,8 @@ export async function launchGame({ chartId, test = false, onExit } = {}) {
   const game = new Game({
     root, chart, notes, test, onExit,
   });
+  // Yan panelde gösterilecek kişisel rekor (varsa)
+  if (data.myBest) game.bestScore = data.myBest;
   // Test/geliştirme kancası: sonuç ekranını konsoldan inceleyebilmek için
   window.__vibrixGame = game;
   return game.start();
@@ -129,6 +139,8 @@ class Game {
     // Nota renkleri: hazır palet ya da kullanıcının kendi renkleri
     this.laneColors = resolveLaneColors(this.settings.visual || {});
     // Eventler (chart'tan gelir)
+    // Kullanıcının bu şarkıdaki en iyi skoru (yan panelde gösterilir)
+    this.bestScore = null;
     this.events = Array.isArray(chart.chartData?.events) ? chart.chartData.events.slice().sort((a, b) => a.time - b.time) : [];
     this.eventIndex = 0;
     this.activeEvents = [];
@@ -176,6 +188,8 @@ class Game {
     this.pressed = [false, false, false, false];
     this.nextNoteIdx = 0;
     this.score = 0;
+    this.health = HEALTH.start;
+    this.failed = false;
     this.finished = false;
     this.startedAt = 0;
   }
@@ -213,6 +227,10 @@ class Game {
             <div class="s" id="hud-score">0</div>
             <div class="acc"><b id="hud-acc">100.00%</b><span class="dot"></span><span id="hud-maxcombo">0 maks</span></div>
             <div class="m zero" id="hud-miss">0 miss</div>
+            <div class="hud-health" id="hud-health" title="Can">
+              <div class="hb"><i id="hud-health-bar"></i></div>
+              <span class="hv" id="hud-health-val">100</span>
+            </div>
             <div class="mono" id="hud-fps" style="display:${this.settings.visual.showFps ? 'block' : 'none'}">FPS --</div>
           </div>
         </div>
@@ -239,9 +257,12 @@ class Game {
       comboNum: this.root.querySelector('#hud-combo-num'),
       comboBar: this.root.querySelector('#hud-combo-bar'),
       maxCombo: this.root.querySelector('#hud-maxcombo'),
+      health: this.root.querySelector('#hud-health'),
+      healthBar: this.root.querySelector('#hud-health-bar'),
+      healthVal: this.root.querySelector('#hud-health-val'),
     };
     // HUD değerleri değiştiğinde "bump" animasyonu için son değerler
-    this._hudLast = { score: -1, combo: -1, miss: -1 };
+    this._hudLast = { score: -1, combo: -1, miss: -1, health: -1 };
     this.applyHudPrefs();
   }
 
@@ -613,6 +634,22 @@ class Game {
       if (kind === 'miss') this.shake = 6;
       else if (kind === 'perfect') this.shake = Math.max(this.shake, 2.2);
     }
+    this.applyHealthDelta(kind);
+  }
+
+  /** Judgement'a göre canı güncelle; 0'a inerse oynanış biter. */
+  applyHealthDelta(kind) {
+    const delta = { perfect: 1.6, great: 1.1, good: 0.4, bad: -2.6, miss: -7.2 }[kind] || 0;
+    const before = this.health;
+    this.health = Math.max(HEALTH.fail, Math.min(HEALTH.max, this.health + delta));
+    // HUD'da kısa bir "flash": hasar alınca kırmızı, iyileşince yeşil
+    if (this.el && this.el.health) {
+      this.el.health.classList.remove('hit', 'heal');
+      void this.el.health.offsetWidth;
+      if (delta < 0) this.el.health.classList.add('hit');
+      else if (before < HEALTH.max && delta > 0) this.el.health.classList.add('heal');
+    }
+    if (this.health <= HEALTH.fail && !this.failed) this.gameOver();
   }
 
   /* ---------- Döngü ---------- */
@@ -761,6 +798,17 @@ class Game {
       e.miss.textContent = this.counts.miss ? `${this.counts.miss} miss` : '0 miss';
       e.miss.classList.toggle('zero', !this.counts.miss);
       L.miss = this.counts.miss;
+    }
+    // Can barı
+    if (e.healthBar && this.health !== L.health) {
+      const pct = Math.max(0, Math.min(100, this.health));
+      e.healthBar.style.width = `${pct}%`;
+      e.healthVal.textContent = String(Math.round(pct));
+      const low = pct <= 30;
+      const mid = pct <= 60;
+      e.health.classList.toggle('low', low);
+      e.health.classList.toggle('mid', !low && mid);
+      L.health = this.health;
     }
     e.acc.textContent = `${acc.toFixed(2)}%`;
     e.maxCombo.textContent = `${fmtNum(this.maxCombo)} maks`;
@@ -1055,11 +1103,17 @@ class Game {
         ctx.shadowBlur = 0;
       }
       ctx.globalAlpha = 1;
-      ctx.fillStyle = active ? '#F1F5F9' : 'rgba(241,245,249,0.6)';
-      ctx.font = '600 12px Inter, Segoe UI, sans-serif';
-      ctx.textAlign = 'center';
-      const keyY = h - 18;
-      ctx.fillText((this.settings.keys[i] || LANE_KEYS[i]).toUpperCase(), x + wL / 2, keyY);
+      // Tuş harfi: judgment çizgisinin ALTINDA, hattın ortasında
+      const keyLabel = String(this.settings.keys[i] || LANE_KEYS[i]).toUpperCase();
+      const keyY = jy + 26;
+      if (keyY < h - 6) {
+        ctx.font = '12px "VCR OSD Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = active ? this.laneColors[i] : 'rgba(241,245,249,0.55)';
+        ctx.fillText(keyLabel, x + wL / 2, keyY);
+        ctx.textBaseline = 'alphabetic';
+      }
     }
 
     /* ---------- Notalar ---------- */
@@ -1201,6 +1255,7 @@ class Game {
     }
     ctx.globalAlpha = 1;
 
+
     // Judgment yazısı — notanın basıldığı hattın ortasında (ortada değil)
     if (this.lastJudgment && nowPerf - this.lastJudgmentAt < 460) {
       const age = (nowPerf - this.lastJudgmentAt) / 460;
@@ -1262,7 +1317,287 @@ class Game {
     // ---- Event görsel katmanları ----
     this.drawEventLayers(ctx, w, h, bx, bw, lw);
 
+    // ---- Yan paneller (sahne çerçevesi): sağ/sol boşlukları doldurur ----
+    // HUD'un alt kenarını ölç: yeni yerleşimde skor bloğu büyüdü, paneller onun altından başlasın
+    if (this.el && this.el.score) {
+      const box = this.el.score.parentElement || this.el.score;   // .hud-score
+      const bottom = box.getBoundingClientRect().bottom - (this.root.getBoundingClientRect().top || 0);
+      if (Number.isFinite(bottom) && bottom > 0) this.hudBottom = Math.round(bottom + 18);
+    }
+    this.drawSideStage(ctx, performance.now(), this.judgmentY, bx, bw);
+
     ctx.restore();
+  }
+
+
+  /** Sahne çerçevesi: boş kalan sağ/sol alanları oyunun kendi verisiyle doldurur.
+   *  Perspektif modunda ufuk çizgisi ve yan sütunlarla, düz modda şarkı kartlarıyla. */
+  drawSideStage(ctx, nowPerf, jy, bx, bw) {
+    const w = this.w, h = this.h;
+    const gap = 14;
+    const topY = this.hudBottom || 76;   // HUD ile çakışmasın
+    const left = { x: 14, y: topY, w: bx - gap * 2, h: jy - topY - 8 };
+    const right = { x: bx + bw + gap, y: topY, w: w - (bx + bw + gap) - 14, h: jy - topY - 8 };
+    if (left.w < 120 || right.w < 120) return; // dar ekran: yer yok
+
+    // Perspektif: boşlukları ufuk noktasına uzanan ışık sütunlarıyla doldur
+    if (this.persp > 0.01) {
+      const farY = this.perspY(this.farY());
+      const cx = w / 2;
+      const topL = bx - gap * 2, topR = bx + bw + gap * 2;
+      for (const side of [-1, 1]) {
+        const x0 = side < 0 ? 0 : w;
+        const g = ctx.createLinearGradient(cx, this.judgmentY, cx + side * w, farY);
+        g.addColorStop(0, 'rgba(139,92,246,0.13)');
+        g.addColorStop(0.55, 'rgba(139,92,246,0.05)');
+        g.addColorStop(1, 'rgba(139,92,246,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(x0, farY);
+        ctx.lineTo(side < 0 ? topL : topR, jy);
+        ctx.lineTo(side < 0 ? topL : topR, this.judgmentY + 40);
+        ctx.lineTo(x0, farY + 40);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    // Bu şarkıya özel istatistikler (varsa)
+    const best = this.bestScore;
+
+    // ---- Sol panel: şarkı künyesi + oynanış verileri ----
+    const lx = left.x, ly = left.y, lw = left.w, lh = left.h;
+    ctx.save();
+    ctx.fillStyle = 'rgba(9,7,16,0.55)';
+    ctx.strokeStyle = 'rgba(139,92,246,0.22)';
+    ctx.lineWidth = 1;
+    roundRect(ctx, lx, ly, lw, lh, 14);
+    ctx.fill();
+    ctx.stroke();
+
+    const pad = 16;
+    let cy2 = ly + 22;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    // Küçük etiket
+    ctx.font = '10px "VCR OSD Mono", monospace';
+    ctx.fillStyle = 'rgba(196,181,253,0.7)';
+    ctx.fillText('ŞARKI', lx + pad, cy2);
+    cy2 += 22;
+    // Şarkı adı (sarmalı)
+    ctx.font = '14px "VCR OSD Mono", monospace';
+    ctx.fillStyle = '#F1F5F9';
+    cy2 = this.wrapText(ctx, this.chart.songTitle || '', lx + pad, cy2, lw - pad * 2, 17, 2);
+    // Sanatçı
+    ctx.font = '11px "VCR OSD Mono", monospace';
+    ctx.fillStyle = 'rgba(148,163,184,0.9)';
+    cy2 += 14;
+    cy2 = this.wrapText(ctx, this.chart.artist || 'Bilinmeyen sanatçı', lx + pad, cy2, lw - pad * 2, 14, 1);
+
+    // Ayırıcı
+    cy2 += 10;
+    ctx.strokeStyle = 'rgba(148,163,184,0.16)';
+    ctx.beginPath(); ctx.moveTo(lx + pad, cy2); ctx.lineTo(lx + lw - pad, cy2); ctx.stroke();
+    cy2 += 20;
+
+    // Veri satırları
+    const row = (label, value, color) => {
+      if (cy2 > ly + lh - 22) return;
+      ctx.font = '10px "VCR OSD Mono", monospace';
+      ctx.fillStyle = 'rgba(148,163,184,0.75)';
+      ctx.fillText(label, lx + pad, cy2);
+      ctx.font = '12px "VCR OSD Mono", monospace';
+      ctx.fillStyle = color || '#E2E8F0';
+      ctx.textAlign = 'right';
+      ctx.fillText(String(value), lx + lw - pad, cy2);
+      ctx.textAlign = 'left';
+      cy2 += 20;
+    };
+    row('SEVİYE', `Lv.${this.chart.difficultyLevel}`);
+    row('BPM', this.chart.bpm ? Math.round(this.chart.bpm) : '—');
+    row('NOTA', fmtNum(this.notes.length));
+    const durMs = this.chartLength > 0 ? this.chartLength : (Number(this.chart.lengthMs) || 0);
+    row('SÜRE', durMs ? fmtDuration(durMs) : '—');
+    if (best) row('EN İYİ', fmtNum(best.score), '#C084FC');
+    // Hatalı oynanış uyarısı (8+ hata → skor kaydedilmez)
+    const mistakes = this.counts.miss + this.counts.bad;
+    if (mistakes >= HEALTH.failLives) row('DURUM', 'GEÇERSİZ', '#F87171');
+    ctx.restore();
+
+    // ---- Sağ panel: bölüm ilerlemesi + judgment dağılımı ----
+    const rx = right.x, ry = right.y, rw = right.w, rh = right.h;
+    ctx.save();
+    ctx.fillStyle = 'rgba(9,7,16,0.55)';
+    ctx.strokeStyle = 'rgba(139,92,246,0.22)';
+    ctx.lineWidth = 1;
+    roundRect(ctx, rx, ry, rw, rh, 14);
+    ctx.fill();
+    ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    let ry2 = ry + 22;
+    ctx.font = '10px "VCR OSD Mono", monospace';
+    ctx.fillStyle = 'rgba(196,181,253,0.7)';
+    ctx.fillText('İLERLEME', rx + pad, ry2);
+    ry2 += 18;
+    // Yüzde
+    const tNow = Math.max(0, this.currentTimeMs() || 0);
+    const lenMs = this.chartLength > 0 ? this.chartLength : (Number(this.chart.lengthMs) || 0);
+    const pct = lenMs ? Math.max(0, Math.min(100, (tNow / lenMs) * 100)) : 0;
+    ctx.font = '18px "VCR OSD Mono", monospace';
+    ctx.fillStyle = '#F1F5F9';
+    ctx.fillText(`%${Math.floor(pct)}`, rx + pad, ry2 + 6);
+    ry2 += 26;
+    // İnce çubuk
+    const barW = rw - pad * 2;
+    ctx.fillStyle = 'rgba(148,163,184,0.2)';
+    roundRect(ctx, rx + pad, ry2, barW, 5, 3); ctx.fill();
+    const grad = ctx.createLinearGradient(rx + pad, 0, rx + pad + barW, 0);
+    grad.addColorStop(0, '#8B3DFF'); grad.addColorStop(1, '#E879F9');
+    ctx.fillStyle = grad;
+    roundRect(ctx, rx + pad, ry2, Math.max(2, barW * (pct / 100)), 5, 3); ctx.fill();
+    ry2 += 24;
+
+    ctx.strokeStyle = 'rgba(148,163,184,0.16)';
+    ctx.beginPath(); ctx.moveTo(rx + pad, ry2); ctx.lineTo(rx + rw - pad, ry2); ctx.stroke();
+    ry2 += 20;
+
+    ctx.font = '10px "VCR OSD Mono", monospace';
+    ctx.fillStyle = 'rgba(196,181,253,0.7)';
+    ctx.fillText('DAĞILIM', rx + pad, ry2);
+    ry2 += 18;
+
+    const c = this.counts;
+    const total = c.perfect + c.great + c.good + c.bad + c.miss;
+    const rows = [
+      ['PERFECT', c.perfect, '#E9E2FF'],
+      ['GREAT', c.great, '#D8B4FE'],
+      ['GOOD', c.good, '#4ADE80'],
+      ['BAD', c.bad, '#FDE047'],
+      ['MISS', c.miss, '#F87171'],
+    ];
+    for (const [label, val, color] of rows) {
+      if (ry2 > ry + rh - 14) break;
+      ctx.font = '10px "VCR OSD Mono", monospace';
+      ctx.fillStyle = 'rgba(148,163,184,0.8)';
+      ctx.fillText(label, rx + pad, ry2);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = val ? color : 'rgba(148,163,184,0.45)';
+      ctx.fillText(String(val), rx + rw - pad, ry2);
+      ctx.textAlign = 'left';
+      // mini dolum çubuğu
+      if (total) {
+        const fp = val / total;
+        const bw2 = Math.max(0, (rw - pad * 2 - 74));
+        ctx.fillStyle = 'rgba(148,163,184,0.14)';
+        roundRect(ctx, rx + pad + 74, ry2 - 2.5, bw2, 4, 2); ctx.fill();
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.85;
+        roundRect(ctx, rx + pad + 74, ry2 - 2.5, Math.max(1, bw2 * fp), 4, 2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ry2 += 19;
+    }
+
+    // Doğruluk
+    if (ry2 <= ry + rh - 18) {
+      const acc = total ? computeAccuracy(this.counts) : 100;
+      ry2 = ry + rh - 20;
+      ctx.strokeStyle = 'rgba(148,163,184,0.16)';
+      ctx.beginPath(); ctx.moveTo(rx + pad, ry2 - 10); ctx.lineTo(rx + rw - pad, ry2 - 10); ctx.stroke();
+      ctx.font = '10px "VCR OSD Mono", monospace';
+      ctx.fillStyle = 'rgba(148,163,184,0.8)';
+      ctx.fillText('DOĞRULUK', rx + pad, ry2);
+      ctx.textAlign = 'right';
+      ctx.font = '13px "VCR OSD Mono", monospace';
+      ctx.fillStyle = '#C084FC';
+      ctx.fillText(fmtAcc(acc), rx + rw - pad, ry2);
+      ctx.textAlign = 'left';
+    }
+    ctx.restore();
+
+    // ---- Alt boşluk (sol): bu oturumun özeti ----
+    // Kombo paneli artık sol altta duruyor: özet onun üstünde kalsın
+    const comboBox = this.root.querySelector('.hud-combo');
+    let comboTop = h;
+    if (comboBox && getComputedStyle(comboBox).display !== 'none') {
+      const rootRect = this.root.getBoundingClientRect();
+      comboTop = (comboBox.getBoundingClientRect().top - rootRect.top) || h;
+    }
+    const bottomTop = jy + 52;
+    const bottomBottom = Math.min(h - 16, comboTop - 12);
+    const bottomH = bottomBottom - bottomTop;
+    if (bottomH > 60 && left.w > 150) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(9,7,16,0.5)';
+      ctx.strokeStyle = 'rgba(139,92,246,0.18)';
+      ctx.lineWidth = 1;
+      roundRect(ctx, left.x, bottomTop, left.w, bottomH, 14);
+      ctx.fill();
+      ctx.stroke();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      let by = bottomTop + 20;
+      ctx.font = '10px "VCR OSD Mono", monospace';
+      ctx.fillStyle = 'rgba(196,181,253,0.7)';
+      ctx.fillText('BU OTURUM', left.x + pad, by);
+      by += 18;
+      // Bu şarkıda daha önce oynadıysa kıyas
+      if (best && by < bottomTop + bottomH - 16) {
+        const diff = this.score - best.score;
+        const sign = diff > 0 ? '+' : '';
+        const color = diff > 0 ? '#4ADE80' : diff < 0 ? '#F87171' : 'rgba(148,163,184,0.8)';
+        ctx.font = '10px "VCR OSD Mono", monospace';
+        ctx.fillStyle = 'rgba(148,163,184,0.75)';
+        ctx.fillText('REKORA GÖRE', left.x + pad, by);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = color;
+        ctx.fillText(`${sign}${fmtNum(diff)}`, left.x + left.w - pad, by);
+        ctx.textAlign = 'left';
+        by += 18;
+      }
+      // Kalan nota
+      if (by < bottomTop + bottomH - 16) {
+        const left2 = this.notes.length - (this.counts.perfect + this.counts.great + this.counts.good + this.counts.bad + this.counts.miss);
+        ctx.font = '10px "VCR OSD Mono", monospace';
+        ctx.fillStyle = 'rgba(148,163,184,0.75)';
+        ctx.fillText('KALAN NOTA', left.x + pad, by);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#E2E8F0';
+        ctx.fillText(fmtNum(Math.max(0, left2)), left.x + left.w - pad, by);
+        ctx.textAlign = 'left';
+      }
+      ctx.restore();
+    }
+  }
+
+  /** Metni verilen genişliğe göre satırlara bölerek çizer; sonraki Y'yi döndürür */
+  wrapText(ctx, text, x, y, maxW, lineH, maxLines = 2) {
+    const words = String(text).split(/\s+/).filter(Boolean);
+    let line = '';
+    let lines = 0;
+    for (let i = 0; i < words.length; i++) {
+      const test = line ? `${line} ${words[i]}` : words[i];
+      if (ctx.measureText(test).width > maxW && line) {
+        ctx.fillText(line, x, y);
+        y += lineH;
+        lines++;
+        line = words[i];
+        if (lines >= maxLines - 1 && i < words.length - 1) {
+          // son satır: kalanı "…" ile kes
+          let rest = words.slice(i).join(' ');
+          while (rest.length > 1 && ctx.measureText(rest).width > maxW) rest = rest.slice(0, -1);
+          ctx.fillText(`${rest}…`, x, y);
+          return y + lineH;
+        }
+      } else {
+        line = test;
+      }
+    }
+    if (line) { ctx.fillText(line, x, y); y += lineH; }
+    return y;
   }
 
   /** Eventlerin ekran efektleri: karartma, glitch, ters akış, dalga, hat parıltısı */
@@ -1474,6 +1809,47 @@ class Game {
     if (this.audioCtx && this.audioCtx.state === 'suspended') this.audioCtx.resume();
   }
 
+  /**
+   * Can 0'a indi: oynanışı durdur ve Game Over ekranını göster.
+   * Skor gönderilmez (oynanış yarıda kaldı); "Tekrar dene" ile yeniden başlanır.
+   */
+  gameOver() {
+    if (this.failed || this.finished) return;
+    this.failed = true;
+    this.state = 'failed';
+    this.destroyAudio();
+    const c = this.counts;
+    const totalJudged = c.perfect + c.great + c.good + c.bad + c.miss;
+    const acc = totalJudged ? computeAccuracy(c) : 0;
+    const elapsed = Math.max(0, this.currentTimeMs() || 0);
+    const len = this.chartLength > 0 ? this.chartLength : 0;
+    const pct = len ? Math.max(0, Math.min(100, Math.round((elapsed / len) * 100))) : 0;
+    this.el.overlay.classList.add('open');
+    this.el.overlay.innerHTML = `
+      <div class="overlay-card go-card">
+        <div class="go-glow" aria-hidden="true"></div>
+        <div class="go-badge">${icon('heart')} GAME OVER</div>
+        <h2 class="go-title">Canın bitti</h2>
+        <p class="go-sub">${esc(this.chart.songTitle)} · <b>%${pct}</b> tamamlandı</p>
+        <div class="go-stats">
+          <div class="go-stat"><span>SKOR</span><b>${fmtNum(this.score)}</b></div>
+          <div class="go-stat"><span>DOĞRULUK</span><b>${fmtAcc(acc)}</b></div>
+          <div class="go-stat"><span>MAKS. KOMBO</span><b>${fmtNum(this.maxCombo)}</b></div>
+          <div class="go-stat"><span>KAÇAN</span><b>${fmtNum(c.miss)}</b></div>
+        </div>
+        <p class="go-hint">Bu oynanış kaydedilmedi. Yeniden dene ya da şarkı seçimine dön.</p>
+        <div class="rc-actions">
+          <button class="btn btn-primary" id="go-retry">${icon('refresh')} Tekrar Dene</button>
+          <button class="btn btn-ghost" id="go-songs">${icon('library')} Şarkı Seçimi</button>
+          <button class="btn btn-ghost" id="go-exit">${icon('logout')} Çık</button>
+        </div>
+      </div>`;
+    this.el.overlay.querySelector('#go-retry').onclick = () => this.restart();
+    this.el.overlay.querySelector('#go-songs').onclick = () => this.exit('/oyna');
+    this.el.overlay.querySelector('#go-exit').onclick = () => this.exit();
+    if (this.settings.visual.hitEffects) sfx.judge('miss');
+  }
+
   finish() {
     if (this.finished) return;
     this.finished = true;
@@ -1529,7 +1905,10 @@ class Game {
     };
     let result = null;
     let error = null;
-    if (!auth.user) {
+    const mistakes = this.counts.miss + this.counts.bad;
+    if (mistakes >= HEALTH.failLives) {
+      error = `Çok fazla hata (${mistakes}) — skor kaydedilmedi. Daha temiz bir oynanış dene.`;
+    } else if (!auth.user) {
       error = 'Misafir oynanışı kaydedilmedi. Skorunu kaydetmek için oturum aç.';
     } else {
       try {
